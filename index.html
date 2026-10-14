@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#090d16" />
+  <title>Macro & Recipe Utility Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            slate: {
+              850: '#131c2e',
+              900: '#0f172a',
+              950: '#090d16'
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      background-color: #090d16;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type="number"] {
+      -moz-appearance: textfield;
+    }
+    .weight-fallback {
+      color: #64748b !important;
+      font-style: italic;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="min-h-screen pb-20 selection:bg-teal-500 selection:text-slate-950">
+
+  <!-- TOP STICKY BAR -->
+  <header class="sticky top-0 z-30 bg-slate-950/95 backdrop-blur border-b border-slate-800 px-3 py-2.5">
+    <div class="max-w-5xl mx-auto flex flex-col gap-2">
+      
+      <!-- Row 1: Date Nav + Daily Weight Widget -->
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        
+        <!-- Date Navigation -->
+        <div class="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
+          <button type="button" onclick="shiftDate(-1)" class="px-2.5 py-1 rounded hover:bg-slate-800 text-slate-300 font-bold text-sm" title="Previous Day">←</button>
+          <input type="date" id="currentDateInput" onchange="onDateChange(this.value)" class="bg-transparent text-slate-100 text-sm font-semibold px-1.5 py-0.5 focus:outline-none cursor-pointer" />
+          <button type="button" onclick="shiftDate(1)" class="px-2.5 py-1 rounded hover:bg-slate-800 text-slate-300 font-bold text-sm" title="Next Day">→</button>
+          <button type="button" onclick="jumpToToday()" id="todayBtn" class="ml-1 px-2 py-1 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-teal-400 rounded transition">Today</button>
+        </div>
+
+        <!-- Daily Weight Log Widget with Grey Fallback -->
+        <div class="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
+          <div class="flex flex-col">
+            <div class="flex items-center gap-1">
+              <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Weight</span>
+              <span id="weightStateBadge" class="text-[10px] px-1.5 py-0.2 rounded font-mono"></span>
+            </div>
+            <div class="flex items-center gap-1 mt-0.5">
+              <button type="button" onclick="stepDailyWeight(-0.1)" class="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-mono">-0.1</button>
+              <div class="relative flex items-center">
+                <input
+                  type="number"
+                  step="0.1"
+                  id="headerWeightInput"
+                  onchange="saveDailyWeightFromInput(this.value)"
+                  onfocus="this.select()"
+                  class="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-center font-mono text-sm font-bold text-slate-100 focus:border-teal-500 focus:outline-none"
+                />
+                <span class="text-xs text-slate-500 ml-1">kg</span>
+              </div>
+              <button type="button" onclick="stepDailyWeight(0.1)" class="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-mono">+0.1</button>
+              <button type="button" id="confirmFallbackWeightBtn" onclick="confirmFallbackWeight()" class="hidden px-1.5 py-0.5 bg-teal-900/60 hover:bg-teal-800 text-teal-300 border border-teal-700/60 rounded text-[11px] font-semibold" title="Log previous weight for today">= OK</button>
+              <button type="button" id="clearTodayWeightBtn" onclick="clearDailyWeight()" class="hidden px-1.5 py-0.5 bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-400 rounded text-[11px]" title="Clear today's weight">✕</button>
+            </div>
+          </div>
+          <div class="border-l border-slate-800 pl-2 ml-1 hidden sm:block">
+            <div class="text-[10px] text-slate-400">EMA Trend</div>
+            <div id="headerEmaTrend" class="text-xs font-mono font-bold text-teal-400">-- kg</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Row 2: Navigation Tabs -->
+      <nav class="grid grid-cols-4 gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 text-xs font-semibold">
+        <button type="button" onclick="switchTab('log')" id="tab-log" class="py-1.5 px-2 rounded text-center transition">1. Daily Log</button>
+        <button type="button" onclick="switchTab('recipe')" id="tab-recipe" class="py-1.5 px-2 rounded text-center transition">2. Meal Builder</button>
+        <button type="button" onclick="switchTab('db')" id="tab-db" class="py-1.5 px-2 rounded text-center transition">3. Food DB</button>
+        <button type="button" onclick="switchTab('stats')" id="tab-stats" class="py-1.5 px-2 rounded text-center transition">4. TDEE & Cut</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main class="max-w-5xl mx-auto px-3 pt-4 space-y-5">
+
+    <!-- ==========================================
+         TAB 1: DAILY LOG
+         ========================================== -->
+    <section id="view-log" class="space-y-4">
+      
+      <!-- Daily Summary Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-lg">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-800">
+          <div>
+            <span class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Selected Day Totals</span>
+            <div class="flex items-baseline gap-2 mt-0.5">
+              <span id="dayTotalKcal" class="text-2xl sm:text-3xl font-extrabold font-mono text-white">0</span>
+              <span class="text-xs text-slate-400 font-mono">kcal</span>
+            </div>
+          </div>
+          <div class="text-right">
+            <span class="text-[11px] text-slate-400">7d Rolling Avg (Logged)</span>
+            <div id="rolling7dSummary" class="text-xs font-mono text-teal-400 font-semibold">-- kcal | P: --g</div>
+          </div>
+        </div>
+
+        <!-- Macro Grid -->
+        <div class="grid grid-cols-3 gap-2.5 text-center">
+          <div class="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2">
+            <div class="text-[11px] text-sky-400 font-semibold uppercase">Protein</div>
+            <div class="text-lg font-bold font-mono text-white mt-0.5"><span id="dayTotalP">0</span>g</div>
+            <div class="text-[11px] font-mono text-slate-400 flex justify-center gap-1.5 mt-0.5">
+              <span id="dayPctP">0%</span>
+              <span>•</span>
+              <span id="dayGkgP" class="text-sky-300 font-semibold">0.0 g/kg</span>
+            </div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2">
+            <div class="text-[11px] text-amber-400 font-semibold uppercase">Fats</div>
+            <div class="text-lg font-bold font-mono text-white mt-0.5"><span id="dayTotalF">0</span>g</div>
+            <div class="text-[11px] font-mono text-slate-400 flex justify-center gap-1.5 mt-0.5">
+              <span id="dayPctF">0%</span>
+              <span>•</span>
+              <span id="dayGkgF" class="text-amber-300 font-semibold">0.0 g/kg</span>
+            </div>
+          </div>
+          <div class="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2">
+            <div class="text-[11px] text-emerald-400 font-semibold uppercase">Carbs</div>
+            <div class="text-lg font-bold font-mono text-white mt-0.5"><span id="dayTotalC">0</span>g</div>
+            <div class="text-[11px] font-mono text-slate-400 flex justify-center gap-1.5 mt-0.5">
+              <span id="dayPctC">0%</span>
+              <span>•</span>
+              <span id="dayGkgC" class="text-emerald-300 font-semibold">0.0 g/kg</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Entry Forms Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        
+        <!-- Add from Database -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-bold text-slate-100 uppercase tracking-wide">Add from Food / Recipe DB</h2>
+            <span id="dbCountBadge" class="text-[11px] font-mono text-slate-400"></span>
+          </div>
+
+          <input
+            type="text"
+            id="logFoodSearch"
+            oninput="renderLogFoodSelector()"
+            placeholder="Search food or homemade meal..."
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:border-teal-500 focus:outline-none"
+          />
+
+          <select
+            id="logFoodSelect"
+            onchange="updateLogDbPreview()"
+            size="4"
+            class="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-sm text-slate-200 focus:border-teal-500 focus:outline-none font-mono"
+          ></select>
+
+          <div class="space-y-2">
+            <div class="flex items-center gap-2">
+              <div class="flex-1">
+                <label class="text-[11px] text-slate-400 block mb-0.5">Weight (grams)</label>
+                <input
+                  type="number"
+                  id="logFoodGrams"
+                  value="100"
+                  oninput="updateLogDbPreview()"
+                  onfocus="this.select()"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono font-bold text-white focus:border-teal-500 focus:outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onclick="addDbEntryToLog()"
+                class="mt-4 bg-teal-600 hover:bg-teal-500 text-slate-950 font-bold text-sm px-4 py-2 rounded-lg transition shrink-0"
+              >
+                + Log Food
+              </button>
+            </div>
+
+            <!-- Gram Presets -->
+            <div class="flex flex-wrap gap-1">
+              <button type="button" onclick="setLogGrams(30)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-xs font-mono text-slate-300">30g</button>
+              <button type="button" onclick="setLogGrams(50)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-xs font-mono text-slate-300">50g</button>
+              <button type="button" onclick="setLogGrams(100)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-xs font-mono text-slate-300">100g</button>
+              <button type="button" onclick="setLogGrams(150)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-xs font-mono text-slate-300">150g</button>
+              <button type="button" onclick="setLogGrams(200)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-xs font-mono text-slate-300">200g</button>
+              <button type="button" onclick="setLogGrams(250)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-xs font-mono text-slate-300">250g</button>
+              <button type="button" onclick="setLogGrams(300)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-xs font-mono text-slate-300">300g</button>
+            </div>
+
+            <div id="logDbPreview" class="text-xs font-mono text-slate-400 bg-slate-950/70 p-2 rounded border border-slate-800/80">
+              Select an item above
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Label / Package Entry -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-bold text-slate-100 uppercase tracking-wide">Quick Label Entry (Per 100g)</h2>
+            <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+              <input type="checkbox" id="quickSaveToDb" checked class="rounded bg-slate-950 border-slate-700 text-teal-500 focus:ring-0" />
+              <span>Save to DB</span>
+            </label>
+          </div>
+
+          <input
+            type="text"
+            id="quickName"
+            placeholder="Product name (e.g., Творог 5%, КСБ80)"
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:border-teal-500 focus:outline-none"
+          />
+
+          <div class="grid grid-cols-4 gap-2">
+            <div>
+              <label class="text-[10px] text-sky-400 font-semibold block">P / 100g</label>
+              <input type="number" step="0.1" id="quickP100" oninput="onQuickMacroInput()" placeholder="0" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm font-mono text-white" />
+            </div>
+            <div>
+              <label class="text-[10px] text-amber-400 font-semibold block">F / 100g</label>
+              <input type="number" step="0.1" id="quickF100" oninput="onQuickMacroInput()" placeholder="0" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm font-mono text-white" />
+            </div>
+            <div>
+              <label class="text-[10px] text-emerald-400 font-semibold block">C / 100g</label>
+              <input type="number" step="0.1" id="quickC100" oninput="onQuickMacroInput()" placeholder="0" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm font-mono text-white" />
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-300 font-semibold block">Kcal / 100g</label>
+              <input type="number" step="1" id="quickKcal100" oninput="updateQuickPreview()" placeholder="Auto" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm font-mono text-white" />
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <div class="flex-1">
+              <label class="text-[11px] text-slate-400 block mb-0.5">Portion eaten (g)</label>
+              <input type="number" id="quickGrams" value="100" oninput="updateQuickPreview()" onfocus="this.select()" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono font-bold text-white" />
+            </div>
+            <button type="button" onclick="addQuickLabelToLog()" class="mt-4 bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold text-sm px-4 py-2 rounded-lg transition shrink-0">
+              + Add Entry
+            </button>
+          </div>
+
+          <div id="quickPreview" class="text-xs font-mono text-slate-400 bg-slate-950/70 p-2 rounded border border-slate-800/80">
+            Portion: 0 kcal | P: 0g | F: 0g | C: 0g
+          </div>
+        </div>
+      </div>
+
+      <!-- Logged Items Table for Selected Date -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-sm font-bold text-slate-100 uppercase tracking-wide">Logged Meals (<span id="logTableDateLabel"></span>)</h2>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="copyYesterdayMeals()" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-medium transition">Copy Yesterday</button>
+            <button type="button" onclick="clearDayLog()" class="px-2.5 py-1 bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-300 rounded text-xs font-medium transition">Clear Day</button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs font-mono">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
+                <th class="py-2 pr-2 font-sans">Food / Meal</th>
+                <th class="py-2 px-2 text-right">Grams</th>
+                <th class="py-2 px-2 text-right">Kcal</th>
+                <th class="py-2 px-2 text-right text-sky-400">P (g)</th>
+                <th class="py-2 px-2 text-right text-amber-400">F (g)</th>
+                <th class="py-2 px-2 text-right text-emerald-400">C (g)</th>
+                <th class="py-2 pl-2 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="dailyLogTableBody" class="divide-y divide-slate-800/60"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 2: HOMEMADE MEAL & YIELD BUILDER
+         ========================================== -->
+    <section id="view-recipe" class="hidden space-y-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-4">
+        <div>
+          <h2 class="text-sm font-bold text-slate-100 uppercase tracking-wide">Homemade Cooked-Yield Calculator</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Add raw ingredients, weigh the cooked batch, and get exact macros per 100g of cooked food (accounts for water evaporation or absorption).</p>
+        </div>
+
+        <!-- Add Raw Ingredient to Pot -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-950 p-3 rounded-lg border border-slate-800">
+          <div class="space-y-2">
+            <label class="text-xs font-semibold text-slate-300 block">Add Ingredient from DB</label>
+            <select id="recipeDbSelect" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm text-slate-100 font-mono"></select>
+            <div class="flex items-center gap-2">
+              <input type="number" id="recipeDbGrams" value="500" placeholder="Raw weight (g)" class="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono text-white" />
+              <button type="button" onclick="addIngredientFromDbToRecipe()" class="bg-teal-600 hover:bg-teal-500 text-slate-950 font-bold text-xs px-3 py-2 rounded transition">+ Add to Pot</button>
+            </div>
+          </div>
+
+          <div class="space-y-2 border-t md:border-t-0 md:border-l border-slate-800 pt-2 md:pt-0 md:pl-3">
+            <label class="text-xs font-semibold text-slate-300 block">Or Add Water / Custom Raw Item</label>
+            <div class="grid grid-cols-5 gap-1.5">
+              <input type="text" id="recipeCustomName" placeholder="Name" class="col-span-2 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white" />
+              <input type="number" id="recipeCustomP" placeholder="P/100" class="bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs font-mono text-white" />
+              <input type="number" id="recipeCustomF" placeholder="F/100" class="bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs font-mono text-white" />
+              <input type="number" id="recipeCustomC" placeholder="C/100" class="bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-xs font-mono text-white" />
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="number" id="recipeCustomGrams" value="200" placeholder="Grams" class="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-white" />
+              <button type="button" onclick="addCustomIngredientToRecipe()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-2.5 py-1.5 rounded">+ Custom</button>
+              <button type="button" onclick="addWaterToRecipe(250)" class="bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800 text-xs px-2.5 py-1.5 rounded font-mono">+250g Water</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ingredients Table -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs font-mono">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
+                <th class="py-1.5 font-sans">Raw Ingredient</th>
+                <th class="py-1.5 text-right">Raw (g)</th>
+                <th class="py-1.5 text-right">Kcal</th>
+                <th class="py-1.5 text-right text-sky-400">P</th>
+                <th class="py-1.5 text-right text-amber-400">F</th>
+                <th class="py-1.5 text-right text-emerald-400">C</th>
+                <th class="py-1.5 text-right"></th>
+              </tr>
+            </thead>
+            <tbody id="recipeIngredientsBody" class="divide-y divide-slate-800/60"></tbody>
+          </table>
+        </div>
+
+        <!-- Final Cooked Weight & Tare Calculation -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-800">
+          <div class="space-y-2.5">
+            <label class="text-xs font-bold text-slate-200 uppercase block">Step 2: Final Cooked Weight</label>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <span class="text-[10px] text-slate-400 block">Empty Pot/Pan Tare (optional, g)</span>
+                <input type="number" id="recipePanTare" oninput="onRecipeTareChange()" placeholder="0" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono text-slate-300" />
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-400 block">Pot + Cooked Food (optional, g)</span>
+                <input type="number" id="recipeGrossWeight" oninput="onRecipeTareChange()" placeholder="0" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono text-slate-300" />
+              </div>
+            </div>
+            <div>
+              <span class="text-[11px] text-teal-400 font-semibold block">Net Final Cooked Weight (g)</span>
+              <input type="number" id="recipeFinalCookedGrams" oninput="renderRecipeBuilder()" placeholder="Enter net cooked weight in grams" class="w-full bg-slate-950 border border-teal-600 rounded-lg px-3 py-2 text-base font-mono font-bold text-white" />
+            </div>
+          </div>
+
+          <!-- Resulting Per 100g Cooked Preview -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-col justify-between space-y-3">
+            <div>
+              <div class="flex items-center justify-between text-xs text-slate-400">
+                <span>Result per 100g Cooked:</span>
+                <span id="recipeYieldFactor" class="font-mono text-teal-400">Yield: 100%</span>
+              </div>
+              <div id="recipePer100gResult" class="text-lg font-mono font-bold text-white mt-1">
+                0 kcal | P: 0g | F: 0g | C: 0g
+              </div>
+              <div id="recipeTotalBatchInfo" class="text-[11px] font-mono text-slate-400 mt-0.5">
+                Raw total: 0g → Cooked: 0g
+              </div>
+            </div>
+
+            <div class="space-y-2 pt-2 border-t border-slate-800">
+              <input type="text" id="recipeSaveName" placeholder="Recipe name (e.g., Плов со свининой)" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white" />
+              <div class="flex flex-wrap gap-2">
+                <button type="button" onclick="saveRecipeToDatabase(false)" class="flex-1 bg-teal-600 hover:bg-teal-500 text-slate-950 font-bold text-xs py-2 px-3 rounded transition">Save to Food DB</button>
+                <button type="button" onclick="saveRecipeToDatabase(true)" class="flex-1 bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold text-xs py-2 px-3 rounded transition">Save & Log Portion</button>
+                <button type="button" onclick="clearRecipeBuilder()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs py-2 px-3 rounded">Reset</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 3: FOOD DATABASE
+         ========================================== -->
+    <section id="view-db" class="hidden space-y-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-sm font-bold text-slate-100 uppercase tracking-wide">Saved Foods & Homemade Recipes (Per 100g)</h2>
+          <input type="text" id="dbFilterInput" oninput="renderDatabaseTable()" placeholder="Filter database..." class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1 text-xs text-slate-100" />
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs font-mono">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
+                <th class="py-2 font-sans">Name</th>
+                <th class="py-2 text-right">Kcal/100g</th>
+                <th class="py-2 text-right text-sky-400">P</th>
+                <th class="py-2 text-right text-amber-400">F</th>
+                <th class="py-2 text-right text-emerald-400">C</th>
+                <th class="py-2 text-right">Delete</th>
+              </tr>
+            </thead>
+            <tbody id="dbTableBody" class="divide-y divide-slate-800/60"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 4: SMOOTHED WEIGHT, IMPLIED TDEE & CUT PLANNER
+         ========================================== -->
+    <section id="view-stats" class="hidden space-y-4">
+      
+      <!-- 1. Maintenance & Smoothed Weight Trend Analyzer -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div>
+            <h2 class="text-sm font-bold text-slate-100 uppercase tracking-wide">Smoothed Weight & True Maintenance (Implied TDEE)</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Filters out daily water/glycogen/gut noise using Exponential Moving Average (alpha=0.25) + OLS Regression & Rolling Windows.</p>
+          </div>
+          <!-- Window Selector -->
+          <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs font-mono">
+            <button type="button" onclick="setAnalysisWindow(7)" id="winBtn-7" class="px-2.5 py-1 rounded">7d</button>
+            <button type="button" onclick="setAnalysisWindow(14)" id="winBtn-14" class="px-2.5 py-1 rounded">14d</button>
+            <button type="button" onclick="setAnalysisWindow(21)" id="winBtn-21" class="px-2.5 py-1 rounded">21d</button>
+            <button type="button" onclick="setAnalysisWindow(28)" id="winBtn-28" class="px-2.5 py-1 rounded">28d</button>
+          </div>
+        </div>
+
+        <!-- Verdict Metrics Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Avg Logged Intake</div>
+            <div id="statAvgIntake" class="text-lg font-mono font-bold text-white mt-0.5">-- kcal</div>
+            <div id="statLoggedDaysCount" class="text-[10px] font-mono text-slate-500">0 days logged</div>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Smoothed Weight Trend</div>
+            <div id="statTrendRate" class="text-lg font-mono font-bold text-teal-400 mt-0.5">-- kg/wk</div>
+            <div id="statWoWRate" class="text-[10px] font-mono text-slate-400">WoW Window: --</div>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Net Energy Balance</div>
+            <div id="statEnergyDelta" class="text-lg font-mono font-bold text-white mt-0.5">-- kcal/d</div>
+            <div id="statMaintenanceVerdict" class="text-[10px] font-semibold uppercase mt-0.5">--</div>
+          </div>
+
+          <div class="bg-slate-950 border border-teal-900/70 rounded-lg p-2.5">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] text-teal-400 uppercase font-bold">Implied True TDEE</span>
+              <button type="button" onclick="applyImpliedTdeeToCutPlanner()" class="text-[10px] bg-teal-700 hover:bg-teal-600 text-slate-950 font-bold px-1.5 py-0.5 rounded transition">Use Implied TDEE</button>
+            </div>
+            <div id="statImpliedTdee" class="text-lg font-mono font-extrabold text-teal-300 mt-0.5">-- kcal</div>
+            <div class="text-[10px] font-mono text-slate-400">Intake - (dW * 1100)</div>
+          </div>
+        </div>
+
+        <!-- SVG Trend Chart -->
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3">
+          <div class="flex flex-wrap items-center justify-between text-[11px] text-slate-400 mb-2 gap-2">
+            <div class="flex items-center gap-3">
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-teal-400 inline-block"></span> Smoothed EMA Trend (kg)</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span> Raw Scale Weight</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2 bg-sky-900/70 border border-sky-700/50 inline-block"></span> Daily Kcal</span>
+            </div>
+            <span id="chartRangeLabel" class="font-mono text-[10px]"></span>
+          </div>
+          <div id="trendChartContainer" class="w-full h-48"></div>
+        </div>
+
+        <!-- Day-by-Day Smoothing Table -->
+        <details class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+          <summary class="text-xs font-semibold text-slate-300 cursor-pointer select-none">
+            Show Daily Table: Scale Weight vs. Smoothed EMA vs. 7d Rolling Mean
+          </summary>
+          <div class="overflow-x-auto mt-2.5">
+            <table class="w-full text-left border-collapse text-xs font-mono">
+              <thead>
+                <tr class="border-b border-slate-800 text-slate-400 text-[10px] uppercase">
+                  <th class="py-1.5">Date</th>
+                  <th class="py-1.5 text-right">Scale (kg)</th>
+                  <th class="py-1.5 text-right text-teal-400">EMA Trend (kg)</th>
+                  <th class="py-1.5 text-right text-sky-400">7d Mean (kg)</th>
+                  <th class="py-1.5 text-right">Logged Kcal</th>
+                  <th class="py-1.5 text-right">Protein (g)</th>
+                </tr>
+              </thead>
+              <tbody id="smoothedHistoryTableBody" class="divide-y divide-slate-800/50"></tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+
+      <!-- 2. 10-15% Deficit & High-Protein Cut Planner -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-3">
+        <h2 class="text-sm font-bold text-slate-100 uppercase tracking-wide">10-15% Cut Target Calculator (High-Protein Lock)</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label class="text-[11px] text-slate-400 block mb-1">Baseline Maintenance (kcal)</label>
+            <input type="number" id="cutBaselineKcal" value="2650" oninput="renderCutPlanner()" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono font-bold text-white" />
+          </div>
+          <div>
+            <label class="text-[11px] text-sky-400 block mb-1">Target Protein (g / kg BW)</label>
+            <input type="number" step="0.1" id="cutProteinGkg" value="1.8" oninput="renderCutPlanner()" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono font-bold text-sky-300" />
+          </div>
+          <div>
+            <label class="text-[11px] text-amber-400 block mb-1">Minimum Fats Floor (g / kg BW)</label>
+            <input type="number" step="0.1" id="cutFatGkg" value="0.9" oninput="renderCutPlanner()" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono font-bold text-amber-300" />
+          </div>
+        </div>
+
+        <div id="cutTiersGrid" class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2"></div>
+      </div>
+
+      <!-- 3. Backup / Export JSON & Self-Download HTML -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2">
+        <h2 class="text-sm font-bold text-slate-100 uppercase tracking-wide">Backup, Google Sheets & Clean File Export</h2>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" onclick="exportBackupJson()" class="bg-teal-700 hover:bg-teal-600 text-slate-950 font-bold text-xs px-3 py-2 rounded-lg transition">Export Backup (.json)</button>
+          <label class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-3 py-2 rounded-lg cursor-pointer transition">
+            Restore Backup (.json)
+            <input type="file" accept=".json" onchange="importBackupJson(event)" class="hidden" />
+          </label>
+          <button type="button" onclick="copyDailySummaryTsv()" class="bg-slate-800 hover:bg-slate-700 text-teal-300 font-semibold text-xs px-3 py-2 rounded-lg transition">Copy 28d TSV (Google Sheets)</button>
+          <button type="button" onclick="downloadSelfHtml()" class="bg-sky-700 hover:bg-sky-600 text-slate-950 font-bold text-xs px-3 py-2 rounded-lg transition">Download index.html</button>
+        </div>
+        <div id="exportStatusMsg" class="text-xs font-mono text-teal-400"></div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <script>
+    const STORAGE_KEY = 'macro_utility_tracker_v1';
+
+    const DEFAULT_FOODS = [
+      { id: 'f_ksb80', name: 'КСБ-80 (WPC 80 Сывороточный протеин)', p: 80, f: 5, c: 6, kcal: 389 },
+      { id: 'f_tvorog5', name: 'Творог 5%', p: 17, f: 5, c: 1.8, kcal: 121 },
+      { id: 'f_chk_raw', name: 'Куриное филе (сырое)', p: 23.1, f: 1.2, c: 0, kcal: 110 },
+      { id: 'f_chk_cook', name: 'Куриное филе (готовое)', p: 29.5, f: 2.1, c: 0, kcal: 145 },
+      { id: 'f_pork_lean', name: 'Свинина нежирная (вырезка/карбонад, сырая)', p: 20.5, f: 7.0, c: 0, kcal: 145 },
+      { id: 'f_eggs', name: 'Яйцо куриное (цельное, без скорлупы)', p: 12.7, f: 11.5, c: 0.7, kcal: 157 },
+      { id: 'f_buckwheat', name: 'Гречка (сухая крупа)', p: 12.6, f: 3.3, c: 62.1, kcal: 329 },
+      { id: 'f_rice', name: 'Рис белый (сухой)', p: 7.0, f: 1.0, c: 78.0, kcal: 349 },
+      { id: 'f_oats', name: 'Овсяные хлопья (сухие)', p: 12.3, f: 6.1, c: 59.5, kcal: 342 },
+      { id: 'f_pasta', name: 'Макароны из твёрдых сортов (сухие)', p: 12.5, f: 1.5, c: 71.5, kcal: 350 },
+      { id: 'f_potato', name: 'Картофель (сырой)', p: 2.0, f: 0.4, c: 16.3, kcal: 77 },
+      { id: 'f_butter', name: 'Масло сливочное 82.5%', p: 0.6, f: 82.5, c: 0.8, kcal: 748 },
+      { id: 'f_oil', name: 'Масло подсолнечное / оливковое', p: 0, f: 99.9, c: 0, kcal: 899 }
+    ];
+
+    function getTodayIso() {
+      const d = new Date();
+      const offset = d.getTimezoneOffset();
+      const local = new Date(d.getTime() - offset * 60000);
+      return local.toISOString().split('T')[0];
+    }
+
+    let currentDate = getTodayIso();
+    let activeTab = 'log';
+    let analysisWindowDays = 14;
+    let recipePot = [];
+
+    let state = {
+      bodyweight: 90.5,
+      weightLogs: {},
+      activeTargetKcal: null,
+      foods: [...DEFAULT_FOODS],
+      logs: {}
+    };
+
+    // Universal Safe Normalizer for any v1 schema variation
+    function normalizeFoodItem(raw, idx) {
+      if (!raw || typeof raw !== 'object') return null;
+      const p = Number(raw.p ?? raw.protein ?? raw.proteins ?? 0) || 0;
+      const f = Number(raw.f ?? raw.fat ?? raw.fats ?? 0) || 0;
+      const c = Number(raw.c ?? raw.carbs ?? raw.carb ?? 0) || 0;
+      const kcal = Number(raw.kcal ?? raw.calories ?? raw.cal ?? (p * 4 + f * 9 + c * 4)) || 0;
+      return {
+        id: String(raw.id || ('f_mig_' + idx + '_' + Date.now())),
+        name: String(raw.name || raw.title || 'Unnamed Food'),
+        p: Math.round(p * 10) / 10,
+        f: Math.round(f * 10) / 10,
+        c: Math.round(c * 10) / 10,
+        kcal: Math.round(kcal)
+      };
+    }
+
+    function normalizeLogEntry(raw, idx) {
+      if (!raw || typeof raw !== 'object') return null;
+      const grams = Number(raw.grams ?? raw.weight ?? raw.amount ?? 100) || 0;
+      const p = Number(raw.p ?? raw.protein ?? 0) || 0;
+      const f = Number(raw.f ?? raw.fat ?? 0) || 0;
+      const c = Number(raw.c ?? raw.carbs ?? 0) || 0;
+      const kcal = Number(raw.kcal ?? raw.calories ?? (p * 4 + f * 9 + c * 4)) || 0;
+      return {
+        id: String(raw.id || ('log_mig_' + idx + '_' + Date.now())),
+        name: String(raw.name || raw.foodName || raw.title || 'Entry'),
+        grams: Math.round(grams * 10) / 10,
+        p: Math.round(p * 10) / 10,
+        f: Math.round(f * 10) / 10,
+        c: Math.round(c * 10) / 10,
+        kcal: Math.round(kcal)
+      };
+    }
+
+    function loadState() {
+      try {
+        // Scan primary key or any existing macro tracker key in localStorage
+        let raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.toLowerCase().includes('macro')) {
+              raw = localStorage.getItem(k);
+              if (raw) break;
+            }
+          }
+        }
+        if (!raw) return;
+
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return;
+
+        state.bodyweight = Number(parsed.bodyweight ?? parsed.weight ?? parsed.settings?.bodyweight ?? 90.5) || 90.5;
+        state.weightLogs = (parsed.weightLogs && typeof parsed.weightLogs === 'object') ? parsed.weightLogs : {};
+
+        // Migrate foods array from any possible property name
+        const rawFoods = parsed.foods || parsed.foodDb || parsed.database || parsed.items || [];
+        if (Array.isArray(rawFoods) && rawFoods.length > 0) {
+          const cleanFoods = rawFoods.map((it, i) => normalizeFoodItem(it, i)).filter(Boolean);
+          if (cleanFoods.length > 0) state.foods = cleanFoods;
+        }
+
+        // Migrate daily logs from any possible property structure
+        const rawLogs = parsed.logs || parsed.dailyLogs || parsed.days || parsed.history || {};
+        const cleanLogs = {};
+        if (rawLogs && typeof rawLogs === 'object') {
+          Object.keys(rawLogs).forEach(dateKey => {
+            const dayVal = rawLogs[dateKey];
+            if (Array.isArray(dayVal)) {
+              cleanLogs[dateKey] = dayVal.map((it, i) => normalizeLogEntry(it, i)).filter(Boolean);
+            } else if (dayVal && typeof dayVal === 'object') {
+              const arr = dayVal.entries || dayVal.items || dayVal.meals || dayVal.logs || [];
+              if (Array.isArray(arr)) {
+                cleanLogs[dateKey] = arr.map((it, i) => normalizeLogEntry(it, i)).filter(Boolean);
+              }
+              if (dayVal.weight && !state.weightLogs[dateKey]) {
+                state.weightLogs[dateKey] = Number(dayVal.weight);
+              }
+            }
+          });
+        }
+        state.logs = cleanLogs;
+      } catch (e) {
+        console.error('Error loading state:', e);
+      }
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (e) {
+        console.error('Error saving state:', e);
+      }
+    }
+
+    // =========================================================================
+    // DAILY WEIGHT RESOLUTION & GREY FALLBACK LOGIC
+    // =========================================================================
+    function getEffectiveWeightForDate(dateStr) {
+      if (state.weightLogs && state.weightLogs[dateStr] !== undefined && state.weightLogs[dateStr] !== null) {
+        return {
+          weight: Number(state.weightLogs[dateStr]),
+          isFallback: false,
+          sourceDate: dateStr
+        };
+      }
+      const allDates = Object.keys(state.weightLogs || {}).sort();
+      let prevDate = null;
+      for (let i = 0; i < allDates.length; i++) {
+        const d = allDates[i];
+        if (d <= dateStr && state.weightLogs[d] > 0) {
+          prevDate = d;
+        }
+      }
+      if (prevDate) {
+        return {
+          weight: Number(state.weightLogs[prevDate]),
+          isFallback: true,
+          sourceDate: prevDate
+        };
+      }
+      if (allDates.length > 0) {
+        const firstDate = allDates[0];
+        return {
+          weight: Number(state.weightLogs[firstDate]),
+          isFallback: true,
+          sourceDate: firstDate
+        };
+      }
+      return {
+        weight: Number(state.bodyweight || 90.5),
+        isFallback: true,
+        sourceDate: null
+      };
+    }
+
+    function setDailyWeight(dateStr, val) {
+      const num = parseFloat(val);
+      if (isNaN(num) || num <= 20 || num >= 300) return;
+      const rounded = Math.round(num * 10) / 10;
+      if (!state.weightLogs) state.weightLogs = {};
+      state.weightLogs[dateStr] = rounded;
+      state.bodyweight = rounded;
+      saveState();
+      renderAll();
+    }
+
+    function saveDailyWeightFromInput(val) {
+      if (val === '' || val === null) {
+        clearDailyWeight();
+        return;
+      }
+      setDailyWeight(currentDate, val);
+    }
+
+    function stepDailyWeight(delta) {
+      const eff = getEffectiveWeightForDate(currentDate);
+      const nextVal = Math.round((eff.weight + delta) * 10) / 10;
+      setDailyWeight(currentDate, nextVal);
+    }
+
+    function confirmFallbackWeight() {
+      const eff = getEffectiveWeightForDate(currentDate);
+      setDailyWeight(currentDate, eff.weight);
+    }
+
+    function clearDailyWeight() {
+      if (state.weightLogs && state.weightLogs[currentDate] !== undefined) {
+        delete state.weightLogs[currentDate];
+        saveState();
+        renderAll();
+      }
+    }
+
+    // =========================================================================
+    // SMOOTHED WEIGHT SERIES (EMA alpha=0.25 + 7d SMA + OLS REGRESSION)
+    // =========================================================================
+    function addDaysIso(dateStr, deltaDays) {
+      const parts = dateStr.split('-').map(Number);
+      const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + deltaDays));
+      return dt.toISOString().split('T')[0];
+    }
+
+    function buildSmoothedDailySeries(endDateStr, lookbackDays) {
+      const daysCount = lookbackDays || 56;
+      const startDateStr = addDaysIso(endDateStr, -(daysCount - 1));
+      const allWeightDates = Object.keys(state.weightLogs || {}).sort();
+
+      const series = [];
+      for (let i = 0; i < daysCount; i++) {
+        const d = addDaysIso(startDateStr, i);
+        const rawW = (state.weightLogs && state.weightLogs[d] !== undefined) ? Number(state.weightLogs[d]) : null;
+        const dayEntries = Array.isArray(state.logs[d]) ? state.logs[d] : [];
+        const kcal = dayEntries.reduce((acc, it) => acc + (Number(it.kcal) || 0), 0);
+        const p = dayEntries.reduce((acc, it) => acc + (Number(it.p) || 0), 0);
+        series.push({
+          date: d,
+          rawWeight: rawW,
+          interpWeight: null,
+          emaWeight: null,
+          sma7Weight: null,
+          kcal: Math.round(kcal),
+          p: Math.round(p * 10) / 10,
+          hasFoodLog: dayEntries.length > 0
+        });
+      }
+
+      const knownIndices = [];
+      series.forEach((pt, idx) => {
+        if (pt.rawWeight !== null && !isNaN(pt.rawWeight)) knownIndices.push(idx);
+      });
+
+      if (knownIndices.length === 0) {
+        const fallbackW = Number(state.bodyweight || 90.5);
+        series.forEach(pt => {
+          pt.interpWeight = fallbackW;
+          pt.emaWeight = fallbackW;
+          pt.sma7Weight = fallbackW;
+        });
+        return series;
+      }
+
+      const firstKnownIdx = knownIndices[0];
+      const firstDateInWindow = series[0].date;
+      let priorWeight = series[firstKnownIdx].rawWeight;
+      for (let i = 0; i < allWeightDates.length; i++) {
+        const wd = allWeightDates[i];
+        if (wd < firstDateInWindow) priorWeight = Number(state.weightLogs[wd]);
+      }
+      for (let i = 0; i < firstKnownIdx; i++) {
+        series[i].interpWeight = priorWeight;
+      }
+
+      for (let k = 0; k < knownIndices.length; k++) {
+        const idxA = knownIndices[k];
+        series[idxA].interpWeight = series[idxA].rawWeight;
+        if (k < knownIndices.length - 1) {
+          const idxB = knownIndices[k + 1];
+          const wA = series[idxA].rawWeight;
+          const wB = series[idxB].rawWeight;
+          const span = idxB - idxA;
+          for (let j = idxA + 1; j < idxB; j++) {
+            const ratio = (j - idxA) / span;
+            series[j].interpWeight = wA + (wB - wA) * ratio;
+          }
+        }
+      }
+
+      const lastKnownIdx = knownIndices[knownIndices.length - 1];
+      for (let i = lastKnownIdx + 1; i < series.length; i++) {
+        series[i].interpWeight = series[lastKnownIdx].rawWeight;
+      }
+
+      const alpha = 0.25;
+      for (let i = 0; i < series.length; i++) {
+        if (i === 0) {
+          series[i].emaWeight = series[i].interpWeight;
+        } else {
+          series[i].emaWeight = alpha * series[i].interpWeight + (1 - alpha) * series[i - 1].emaWeight;
+        }
+        const winStart = Math.max(0, i - 6);
+        let sum = 0;
+        let cnt = 0;
+        for (let j = winStart; j <= i; j++) {
+          sum += series[j].interpWeight;
+          cnt++;
+        }
+        series[i].sma7Weight = sum / cnt;
+      }
+
+      return series;
+    }
+
+    function analyzeWindowStats(endDateStr, windowDays) {
+      const fullSeries = buildSmoothedDailySeries(endDateStr, Math.max(56, windowDays + 14));
+      const windowSlice = fullSeries.slice(fullSeries.length - windowDays);
+      const prev7Slice = fullSeries.slice(fullSeries.length - 14, fullSeries.length - 7);
+      const last7Slice = fullSeries.slice(fullSeries.length - 7);
+
+      const loggedDays = windowSlice.filter(d => d.hasFoodLog && d.kcal > 0);
+      const avgKcal = loggedDays.length
+        ? Math.round(loggedDays.reduce((s, d) => s + d.kcal, 0) / loggedDays.length)
+        : 0;
+
+      const n = windowSlice.length;
+      let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+      for (let i = 0; i < n; i++) {
+        const x = i;
+        const y = windowSlice[i].emaWeight;
+        sumX += x;
+        sumY += y;
+        sumXY += x * y;
+        sumXX += x * x;
+      }
+      const denom = n * sumXX - sumX * sumX;
+      const slopePerDay = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+      const olsWeeklyRateKg = slopePerDay * 7;
+
+      const avgLast7W = last7Slice.reduce((s, d) => s + d.interpWeight, 0) / last7Slice.length;
+      const avgPrev7W = prev7Slice.reduce((s, d) => s + d.interpWeight, 0) / prev7Slice.length;
+      const wowWeeklyRateKg = avgLast7W - avgPrev7W;
+
+      const dailyEnergyDeltaKcal = Math.round((olsWeeklyRateKg * 7700) / 7);
+      const impliedTdee = avgKcal > 0 ? Math.round(avgKcal - dailyEnergyDeltaKcal) : null;
+
+      return {
+        windowSlice,
+        loggedDaysCount: loggedDays.length,
+        avgKcal,
+        olsWeeklyRateKg,
+        wowWeeklyRateKg,
+        dailyEnergyDeltaKcal,
+        impliedTdee,
+        latestEma: fullSeries[fullSeries.length - 1].emaWeight
+      };
+    }
+
+    // =========================================================================
+    // UI RENDERING: HEADER & TAB 1 (DAILY LOG)
+    // =========================================================================
+    function renderHeader() {
+      document.getElementById('currentDateInput').value = currentDate;
+      document.getElementById('logTableDateLabel').textContent = currentDate;
+
+      const eff = getEffectiveWeightForDate(currentDate);
+      const wInput = document.getElementById('headerWeightInput');
+      const badge = document.getElementById('weightStateBadge');
+      const okBtn = document.getElementById('confirmFallbackWeightBtn');
+      const clearBtn = document.getElementById('clearTodayWeightBtn');
+
+      wInput.value = eff.weight.toFixed(1);
+      if (eff.isFallback) {
+        wInput.classList.add('weight-fallback');
+        badge.textContent = eff.sourceDate ? ('prev (' + eff.sourceDate.slice(5) + ')') : 'default';
+        badge.className = 'text-[10px] px-1.5 py-0.2 rounded font-mono bg-slate-800 text-slate-400';
+        okBtn.classList.remove('hidden');
+        clearBtn.classList.add('hidden');
+      } else {
+        wInput.classList.remove('weight-fallback');
+        badge.textContent = 'logged';
+        badge.className = 'text-[10px] px-1.5 py-0.2 rounded font-mono bg-teal-950 text-teal-400 border border-teal-800';
+        okBtn.classList.add('hidden');
+        clearBtn.classList.remove('hidden');
+      }
+
+      const stats = analyzeWindowStats(currentDate, 14);
+      document.getElementById('headerEmaTrend').textContent = stats.latestEma.toFixed(1) + ' kg';
+    }
+
+    function renderDailyLog() {
+      const entries = Array.isArray(state.logs[currentDate]) ? state.logs[currentDate] : [];
+      const effWeight = getEffectiveWeightForDate(currentDate).weight || 90.5;
+
+      let totKcal = 0, totP = 0, totF = 0, totC = 0;
+      entries.forEach(e => {
+        totKcal += Number(e.kcal) || 0;
+        totP += Number(e.p) || 0;
+        totF += Number(e.f) || 0;
+        totC += Number(e.c) || 0;
+      });
+
+      document.getElementById('dayTotalKcal').textContent = Math.round(totKcal);
+      document.getElementById('dayTotalP').textContent = totP.toFixed(1);
+      document.getElementById('dayTotalF').textContent = totF.toFixed(1);
+      document.getElementById('dayTotalC').textContent = totC.toFixed(1);
+
+      const macroKcalSum = totP * 4 + totF * 9 + totC * 4;
+      const pctP = macroKcalSum > 0 ? Math.round(((totP * 4) / macroKcalSum) * 100) : 0;
+      const pctF = macroKcalSum > 0 ? Math.round(((totF * 9) / macroKcalSum) * 100) : 0;
+      const pctC = macroKcalSum > 0 ? Math.max(0, 100 - pctP - pctF) : 0;
+
+      document.getElementById('dayPctP').textContent = pctP + '%';
+      document.getElementById('dayPctF').textContent = pctF + '%';
+      document.getElementById('dayPctC').textContent = pctC + '%';
+
+      document.getElementById('dayGkgP').textContent = (totP / effWeight).toFixed(2) + ' g/kg';
+      document.getElementById('dayGkgF').textContent = (totF / effWeight).toFixed(2) + ' g/kg';
+      document.getElementById('dayGkgC').textContent = (totC / effWeight).toFixed(2) + ' g/kg';
+
+      let sum7Kcal = 0, sum7P = 0, cnt7 = 0;
+      for (let i = 0; i < 7; i++) {
+        const d = addDaysIso(currentDate, -i);
+        const dayArr = Array.isArray(state.logs[d]) ? state.logs[d] : [];
+        if (dayArr.length > 0) {
+          cnt7++;
+          sum7Kcal += dayArr.reduce((s, x) => s + (Number(x.kcal) || 0), 0);
+          sum7P += dayArr.reduce((s, x) => s + (Number(x.p) || 0), 0);
+        }
+      }
+      document.getElementById('rolling7dSummary').textContent = cnt7 > 0
+        ? (Math.round(sum7Kcal / cnt7) + ' kcal | P: ' + Math.round(sum7P / cnt7) + 'g (' + cnt7 + '/7d)')
+        : 'No logs in last 7d';
+
+      const tbody = document.getElementById('dailyLogTableBody');
+      if (entries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="py-4 text-center text-slate-500 font-sans">No meals logged for ' + currentDate + ' yet.</td></tr>';
+      } else {
+        tbody.innerHTML = entries.map((item, idx) => (
+          '<tr class="hover:bg-slate-800/40">' +
+            '<td class="py-2 pr-2 font-sans text-slate-100 font-medium">' + escapeHtml(item.name) + '</td>' +
+            '<td class="py-2 px-2 text-right text-slate-300">' + Math.round(item.grams) + 'g</td>' +
+            '<td class="py-2 px-2 text-right font-bold text-white">' + Math.round(item.kcal) + '</td>' +
+            '<td class="py-2 px-2 text-right text-sky-300">' + Number(item.p).toFixed(1) + '</td>' +
+            '<td class="py-2 px-2 text-right text-amber-300">' + Number(item.f).toFixed(1) + '</td>' +
+            '<td class="py-2 px-2 text-right text-emerald-300">' + Number(item.c).toFixed(1) + '</td>' +
+            '<td class="py-2 pl-2 text-right">' +
+              '<button type="button" onclick="removeLogEntry(' + idx + ')" class="text-slate-500 hover:text-red-400 px-1.5 py-0.5">✕</button>' +
+            '</td>' +
+          '</tr>'
+        )).join('');
+      }
+    }
+
+    function renderLogFoodSelector() {
+      const q = (document.getElementById('logFoodSearch').value || '').toLowerCase().trim();
+      const sel = document.getElementById('logFoodSelect');
+      const currentVal = sel.value;
+
+      const filtered = state.foods.filter(f => String(f.name || '').toLowerCase().includes(q));
+      document.getElementById('dbCountBadge').textContent = filtered.length + ' items';
+
+      sel.innerHTML = filtered.map(f => (
+        '<option value="' + escapeHtml(f.id) + '">' +
+          escapeHtml(f.name) + ' — ' + Math.round(f.kcal) + ' kcal (P:' + f.p + ' F:' + f.f + ' C:' + f.c + ')' +
+        '</option>'
+      )).join('');
+
+      if (filtered.some(f => f.id === currentVal)) {
+        sel.value = currentVal;
+      } else if (filtered.length > 0) {
+        sel.value = filtered[0].id;
+      }
+      updateLogDbPreview();
+    }
+
+    function setLogGrams(g) {
+      document.getElementById('logFoodGrams').value = g;
+      updateLogDbPreview();
+    }
+
+    function updateLogDbPreview() {
+      const selId = document.getElementById('logFoodSelect').value;
+      const grams = parseFloat(document.getElementById('logFoodGrams').value) || 0;
+      const food = state.foods.find(f => f.id === selId);
+      const preview = document.getElementById('logDbPreview');
+      if (!food) {
+        preview.textContent = 'Select an item above';
+        return;
+      }
+      const mult = grams / 100;
+      preview.innerHTML =
+        '<span class="text-slate-200 font-semibold">' + escapeHtml(food.name) + ' (' + grams + 'g):</span> ' +
+        '<span class="text-white font-bold">' + Math.round(food.kcal * mult) + ' kcal</span> | ' +
+        '<span class="text-sky-400">P: ' + (food.p * mult).toFixed(1) + 'g</span> | ' +
+        '<span class="text-amber-400">F: ' + (food.f * mult).toFixed(1) + 'g</span> | ' +
+        '<span class="text-emerald-400">C: ' + (food.c * mult).toFixed(1) + 'g</span>';
+    }
+
+    function addDbEntryToLog() {
+      const selId = document.getElementById('logFoodSelect').value;
+      const grams = parseFloat(document.getElementById('logFoodGrams').value) || 0;
+      const food = state.foods.find(f => f.id === selId);
+      if (!food || grams <= 0) return;
+
+      const mult = grams / 100;
+      if (!Array.isArray(state.logs[currentDate])) state.logs[currentDate] = [];
+      state.logs[currentDate].push({
+        id: 'log_' + Date.now(),
+        name: food.name,
+        grams: grams,
+        p: Math.round(food.p * mult * 10) / 10,
+        f: Math.round(food.f * mult * 10) / 10,
+        c: Math.round(food.c * mult * 10) / 10,
+        kcal: Math.round(food.kcal * mult)
+      });
+      saveState();
+      renderAll();
+    }
+
+    function onQuickMacroInput() {
+      const p = parseFloat(document.getElementById('quickP100').value) || 0;
+      const f = parseFloat(document.getElementById('quickF100').value) || 0;
+      const c = parseFloat(document.getElementById('quickC100').value) || 0;
+      const autoKcal = Math.round(p * 4 + f * 9 + c * 4);
+      document.getElementById('quickKcal100').value = autoKcal > 0 ? autoKcal : '';
+      updateQuickPreview();
+    }
+
+    function updateQuickPreview() {
+      const p = parseFloat(document.getElementById('quickP100').value) || 0;
+      const f = parseFloat(document.getElementById('quickF100').value) || 0;
+      const c = parseFloat(document.getElementById('quickC100').value) || 0;
+      const kcal = parseFloat(document.getElementById('quickKcal100').value) || (p * 4 + f * 9 + c * 4);
+      const grams = parseFloat(document.getElementById('quickGrams').value) || 0;
+      const mult = grams / 100;
+
+      document.getElementById('quickPreview').innerHTML =
+        'Portion (' + grams + 'g): <span class="text-white font-bold">' + Math.round(kcal * mult) + ' kcal</span> | ' +
+        '<span class="text-sky-400">P: ' + (p * mult).toFixed(1) + 'g</span> | ' +
+        '<span class="text-amber-400">F: ' + (f * mult).toFixed(1) + 'g</span> | ' +
+        '<span class="text-emerald-400">C: ' + (c * mult).toFixed(1) + 'g</span>';
+    }
+
+    function addQuickLabelToLog() {
+      const name = (document.getElementById('quickName').value || 'Quick Entry').trim();
+      const p100 = parseFloat(document.getElementById('quickP100').value) || 0;
+      const f100 = parseFloat(document.getElementById('quickF100').value) || 0;
+      const c100 = parseFloat(document.getElementById('quickC100').value) || 0;
+      const kcal100 = parseFloat(document.getElementById('quickKcal100').value) || Math.round(p100 * 4 + f100 * 9 + c100 * 4);
+      const grams = parseFloat(document.getElementById('quickGrams').value) || 0;
+      if (grams <= 0) return;
+
+      if (document.getElementById('quickSaveToDb').checked && name !== 'Quick Entry') {
+        state.foods.unshift({
+          id: 'f_' + Date.now(),
+          name: name,
+          p: p100,
+          f: f100,
+          c: c100,
+          kcal: Math.round(kcal100)
+        });
+      }
+
+      const mult = grams / 100;
+      if (!Array.isArray(state.logs[currentDate])) state.logs[currentDate] = [];
+      state.logs[currentDate].push({
+        id: 'log_' + Date.now(),
+        name: name,
+        grams: grams,
+        p: Math.round(p100 * mult * 10) / 10,
+        f: Math.round(f100 * mult * 10) / 10,
+        c: Math.round(c100 * mult * 10) / 10,
+        kcal: Math.round(kcal100 * mult)
+      });
+
+      document.getElementById('quickName').value = '';
+      document.getElementById('quickP100').value = '';
+      document.getElementById('quickF100').value = '';
+      document.getElementById('quickC100').value = '';
+      document.getElementById('quickKcal100').value = '';
+
+      saveState();
+      renderAll();
+    }
+
+    function removeLogEntry(idx) {
+      if (!Array.isArray(state.logs[currentDate])) return;
+      state.logs[currentDate].splice(idx, 1);
+      saveState();
+      renderAll();
+    }
+
+    function copyYesterdayMeals() {
+      const yest = addDaysIso(currentDate, -1);
+      const yestMeals = Array.isArray(state.logs[yest]) ? state.logs[yest] : [];
+      if (!yestMeals.length) return;
+      if (!Array.isArray(state.logs[currentDate])) state.logs[currentDate] = [];
+      yestMeals.forEach(m => {
+        state.logs[currentDate].push({ ...m, id: 'log_' + Date.now() + Math.random() });
+      });
+      saveState();
+      renderAll();
+    }
+
+    function clearDayLog() {
+      state.logs[currentDate] = [];
+      saveState();
+      renderAll();
+    }
+
+    // =========================================================================
+    // TAB 2: HOMEMADE MEAL & YIELD BUILDER
+    // =========================================================================
+    function renderRecipeBuilder() {
+      const sel = document.getElementById('recipeDbSelect');
+      const prevVal = sel.value;
+      sel.innerHTML = state.foods.map(f => '<option value="' + escapeHtml(f.id) + '">' + escapeHtml(f.name) + ' (' + f.kcal + ' kcal)</option>').join('');
+      if (state.foods.some(f => f.id === prevVal)) sel.value = prevVal;
+
+      const tbody = document.getElementById('recipeIngredientsBody');
+      let rawGramsTotal = 0, totKcal = 0, totP = 0, totF = 0, totC = 0;
+
+      if (recipePot.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="py-3 text-center text-slate-500 font-sans">No raw ingredients in pot yet.</td></tr>';
+      } else {
+        tbody.innerHTML = recipePot.map((it, idx) => {
+          rawGramsTotal += it.grams;
+          totKcal += it.kcal;
+          totP += it.p;
+          totF += it.f;
+          totC += it.c;
+          return (
+            '<tr>' +
+              '<td class="py-1.5 font-sans text-slate-200">' + escapeHtml(it.name) + '</td>' +
+              '<td class="py-1.5 text-right">' + Math.round(it.grams) + 'g</td>' +
+              '<td class="py-1.5 text-right">' + Math.round(it.kcal) + '</td>' +
+              '<td class="py-1.5 text-right text-sky-400">' + it.p.toFixed(1) + '</td>' +
+              '<td class="py-1.5 text-right text-amber-400">' + it.f.toFixed(1) + '</td>' +
+              '<td class="py-1.5 text-right text-emerald-400">' + it.c.toFixed(1) + '</td>' +
+              '<td class="py-1.5 text-right"><button type="button" onclick="removeRecipeIng(' + idx + ')" class="text-slate-500 hover:text-red-400 px-1">✕</button></td>' +
+            '</tr>'
+          );
+        }).join('');
+      }
+
+      const cookedInput = parseFloat(document.getElementById('recipeFinalCookedGrams').value);
+      const finalGrams = cookedInput > 0 ? cookedInput : rawGramsTotal;
+
+      const factor = finalGrams > 0 ? 100 / finalGrams : 0;
+      const p100 = (totP * factor).toFixed(1);
+      const f100 = (totF * factor).toFixed(1);
+      const c100 = (totC * factor).toFixed(1);
+      const kcal100 = Math.round(totKcal * factor);
+
+      const yieldPct = rawGramsTotal > 0 ? Math.round((finalGrams / rawGramsTotal) * 100) : 100;
+      document.getElementById('recipeYieldFactor').textContent = 'Yield: ' + yieldPct + '%';
+      document.getElementById('recipePer100gResult').innerHTML =
+        kcal100 + ' kcal | <span class="text-sky-400">P: ' + p100 + 'g</span> | <span class="text-amber-400">F: ' + f100 + 'g</span> | <span class="text-emerald-400">C: ' + c100 + 'g</span>';
+      document.getElementById('recipeTotalBatchInfo').textContent =
+        'Raw total: ' + Math.round(rawGramsTotal) + 'g → Cooked: ' + Math.round(finalGrams) + 'g (Total batch: ' + Math.round(totKcal) + ' kcal)';
+    }
+
+    function onRecipeTareChange() {
+      const tare = parseFloat(document.getElementById('recipePanTare').value) || 0;
+      const gross = parseFloat(document.getElementById('recipeGrossWeight').value) || 0;
+      if (gross > tare) {
+        document.getElementById('recipeFinalCookedGrams').value = Math.round(gross - tare);
+        renderRecipeBuilder();
+      }
+    }
+
+    function addIngredientFromDbToRecipe() {
+      const id = document.getElementById('recipeDbSelect').value;
+      const grams = parseFloat(document.getElementById('recipeDbGrams').value) || 0;
+      const food = state.foods.find(f => f.id === id);
+      if (!food || grams <= 0) return;
+      const mult = grams / 100;
+      recipePot.push({
+        name: food.name,
+        grams: grams,
+        p: food.p * mult,
+        f: food.f * mult,
+        c: food.c * mult,
+        kcal: food.kcal * mult
+      });
+      renderRecipeBuilder();
+    }
+
+    function addCustomIngredientToRecipe() {
+      const name = (document.getElementById('recipeCustomName').value || 'Custom').trim();
+      const p100 = parseFloat(document.getElementById('recipeCustomP').value) || 0;
+      const f100 = parseFloat(document.getElementById('recipeCustomF').value) || 0;
+      const c100 = parseFloat(document.getElementById('recipeCustomC').value) || 0;
+      const grams = parseFloat(document.getElementById('recipeCustomGrams').value) || 0;
+      if (grams <= 0) return;
+      const mult = grams / 100;
+      recipePot.push({
+        name: name,
+        grams: grams,
+        p: p100 * mult,
+        f: f100 * mult,
+        c: c100 * mult,
+        kcal: (p100 * 4 + f100 * 9 + c100 * 4) * mult
+      });
+      renderRecipeBuilder();
+    }
+
+    function addWaterToRecipe(g) {
+      recipePot.push({ name: 'Water (Вода)', grams: g, p: 0, f: 0, c: 0, kcal: 0 });
+      renderRecipeBuilder();
+    }
+
+    function removeRecipeIng(idx) {
+      recipePot.splice(idx, 1);
+      renderRecipeBuilder();
+    }
+
+    function clearRecipeBuilder() {
+      recipePot = [];
+      document.getElementById('recipeFinalCookedGrams').value = '';
+      document.getElementById('recipeSaveName').value = '';
+      renderRecipeBuilder();
+    }
+
+    function saveRecipeToDatabase(alsoLogPortion) {
+      if (recipePot.length === 0) return;
+      const rawTotal = recipePot.reduce((s, x) => s + x.grams, 0);
+      const cookedInput = parseFloat(document.getElementById('recipeFinalCookedGrams').value);
+      const finalGrams = cookedInput > 0 ? cookedInput : rawTotal;
+      if (finalGrams <= 0) return;
+
+      const factor = 100 / finalGrams;
+      const totP = recipePot.reduce((s, x) => s + x.p, 0);
+      const totF = recipePot.reduce((s, x) => s + x.f, 0);
+      const totC = recipePot.reduce((s, x) => s + x.c, 0);
+      const totKcal = recipePot.reduce((s, x) => s + x.kcal, 0);
+
+      const rawName = (document.getElementById('recipeSaveName').value || 'Homemade Meal').trim();
+      const newFood = {
+        id: 'recipe_' + Date.now(),
+        name: '[Cooked] ' + rawName,
+        p: Math.round(totP * factor * 10) / 10,
+        f: Math.round(totF * factor * 10) / 10,
+        c: Math.round(totC * factor * 10) / 10,
+        kcal: Math.round(totKcal * factor)
+      };
+
+      state.foods.unshift(newFood);
+      if (alsoLogPortion) {
+        if (!Array.isArray(state.logs[currentDate])) state.logs[currentDate] = [];
+        state.logs[currentDate].push({
+          id: 'log_' + Date.now(),
+          name: newFood.name,
+          grams: 200,
+          p: Math.round(newFood.p * 2 * 10) / 10,
+          f: Math.round(newFood.f * 2 * 10) / 10,
+          c: Math.round(newFood.c * 2 * 10) / 10,
+          kcal: Math.round(newFood.kcal * 2)
+        });
+      }
+      saveState();
+      clearRecipeBuilder();
+      switchTab('log');
+    }
+
+    // =========================================================================
+    // TAB 3: FOOD DATABASE TABLE
+    // =========================================================================
+    function renderDatabaseTable() {
+      const q = (document.getElementById('dbFilterInput').value || '').toLowerCase().trim();
+      const tbody = document.getElementById('dbTableBody');
+      const list = state.foods.filter(f => String(f.name || '').toLowerCase().includes(q));
+
+      tbody.innerHTML = list.map(f => (
+        '<tr class="hover:bg-slate-800/40">' +
+          '<td class="py-2 font-sans text-slate-200">' + escapeHtml(f.name) + '</td>' +
+          '<td class="py-2 text-right font-bold text-white">' + Math.round(f.kcal) + '</td>' +
+          '<td class="py-2 text-right text-sky-400">' + f.p + '</td>' +
+          '<td class="py-2 text-right text-amber-400">' + f.f + '</td>' +
+          '<td class="py-2 text-right text-emerald-400">' + f.c + '</td>' +
+          '<td class="py-2 text-right">' +
+            '<button type="button" onclick="deleteFoodFromDb(\'' + escapeHtml(f.id) + '\')" class="text-slate-500 hover:text-red-400 px-1.5">✕</button>' +
+          '</td>' +
+        '</tr>'
+      )).join('');
+    }
+
+    function deleteFoodFromDb(id) {
+      state.foods = state.foods.filter(f => f.id !== id);
+      saveState();
+      renderAll();
+    }
+
+    // =========================================================================
+    // TAB 4: SMOOTHED WEIGHT ANALYTICS, SVG CHART & CUT PLANNER
+    // =========================================================================
+    function setAnalysisWindow(days) {
+      analysisWindowDays = days;
+      renderStatsAndPlanner();
+    }
+
+    function renderStatsAndPlanner() {
+      [7, 14, 21, 28].forEach(d => {
+        const btn = document.getElementById('winBtn-' + d);
+        if (d === analysisWindowDays) {
+          btn.className = 'px-2.5 py-1 rounded bg-teal-600 text-slate-950 font-bold';
+        } else {
+          btn.className = 'px-2.5 py-1 rounded text-slate-400 hover:text-white';
+        }
+      });
+
+      const stats = analyzeWindowStats(currentDate, analysisWindowDays);
+
+      document.getElementById('statAvgIntake').textContent = stats.avgKcal > 0 ? (stats.avgKcal + ' kcal') : '-- kcal';
+      document.getElementById('statLoggedDaysCount').textContent = stats.loggedDaysCount + ' / ' + analysisWindowDays + ' days logged';
+
+      const rateSign = stats.olsWeeklyRateKg > 0 ? '+' : '';
+      document.getElementById('statTrendRate').textContent = rateSign + stats.olsWeeklyRateKg.toFixed(2) + ' kg/wk';
+
+      const wowSign = stats.wowWeeklyRateKg > 0 ? '+' : '';
+      document.getElementById('statWoWRate').textContent = 'WoW 7d Mean: ' + wowSign + stats.wowWeeklyRateKg.toFixed(2) + ' kg';
+
+      const deltaSign = stats.dailyEnergyDeltaKcal > 0 ? '+' : '';
+      document.getElementById('statEnergyDelta').textContent = deltaSign + stats.dailyEnergyDeltaKcal + ' kcal/d';
+
+      const verdictEl = document.getElementById('statMaintenanceVerdict');
+      if (Math.abs(stats.olsWeeklyRateKg) <= 0.15) {
+        verdictEl.textContent = 'True Maintenance (±0.15 kg/wk)';
+        verdictEl.className = 'text-[10px] font-bold uppercase mt-0.5 text-emerald-400';
+      } else if (stats.olsWeeklyRateKg < -0.15) {
+        verdictEl.textContent = 'Caloric Deficit (Losing)';
+        verdictEl.className = 'text-[10px] font-bold uppercase mt-0.5 text-sky-400';
+      } else {
+        verdictEl.textContent = 'Caloric Surplus (Gaining)';
+        verdictEl.className = 'text-[10px] font-bold uppercase mt-0.5 text-amber-400';
+      }
+
+      document.getElementById('statImpliedTdee').textContent = stats.impliedTdee ? (stats.impliedTdee + ' kcal') : '-- kcal';
+
+      renderSvgTrendChart(stats.windowSlice);
+      renderSmoothedHistoryTable(stats.windowSlice);
+      renderCutPlanner();
+    }
+
+    function renderSvgTrendChart(slice) {
+      const container = document.getElementById('trendChartContainer');
+      if (!slice || slice.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
+
+      document.getElementById('chartRangeLabel').textContent = slice[0].date + ' → ' + slice[slice.length - 1].date;
+
+      const w = 680, h = 180, padL = 38, padR = 14, padT = 14, padB = 22;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+
+      const weights = [];
+      slice.forEach(d => {
+        if (d.rawWeight !== null) weights.push(d.rawWeight);
+        if (d.emaWeight !== null) weights.push(d.emaWeight);
+      });
+      const minW = Math.min.apply(null, weights) - 0.4;
+      const maxW = Math.max.apply(null, weights) + 0.4;
+      const maxKcal = Math.max(3500, ...slice.map(d => d.kcal || 0));
+
+      const xFor = i => padL + (slice.length > 1 ? (i / (slice.length - 1)) * plotW : plotW / 2);
+      const yForW = val => padT + plotH - ((val - minW) / (maxW - minW || 1)) * plotH;
+
+      const barW = Math.max(4, Math.min(20, plotW / slice.length - 3));
+      const kcalBars = slice.map((d, i) => {
+        if (!d.kcal) return '';
+        const bh = Math.min(plotH, (d.kcal / maxKcal) * (plotH * 0.65));
+        const bx = xFor(i) - barW / 2;
+        const by = padT + plotH - bh;
+        return '<rect x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + bh.toFixed(1) + '" rx="2" fill="#0c4a6e" opacity="0.45"><title>' + d.date + ': ' + d.kcal + ' kcal</title></rect>';
+      }).join('');
+
+      const emaPoints = slice.map((d, i) => xFor(i).toFixed(1) + ',' + yForW(d.emaWeight).toFixed(1)).join(' ');
+
+      const rawDots = slice.map((d, i) => {
+        if (d.rawWeight === null) return '';
+        return '<circle cx="' + xFor(i).toFixed(1) + '" cy="' + yForW(d.rawWeight).toFixed(1) + '" r="3.5" fill="#94a3b8" stroke="#090d16" stroke-width="1"><title>' + d.date + ' Scale: ' + d.rawWeight.toFixed(1) + ' kg</title></circle>';
+      }).join('');
+
+      const midW = (minW + maxW) / 2;
+      const yGrid = [minW, midW, maxW].map(val => {
+        const y = yForW(val).toFixed(1);
+        return (
+          '<line x1="' + padL + '" y1="' + y + '" x2="' + (w - padR) + '" y2="' + y + '" stroke="#1e293b" stroke-dasharray="3,3" />' +
+          '<text x="' + (padL - 5) + '" y="' + (Number(y) + 3) + '" text-anchor="end" fill="#64748b" font-size="10" font-family="monospace">' + val.toFixed(1) + '</text>'
+        );
+      }).join('');
+
+      container.innerHTML =
+        '<svg viewBox="0 0 ' + w + ' ' + h + '" class="w-full h-full overflow-visible">' +
+          yGrid +
+          kcalBars +
+          '<polyline fill="none" stroke="#2dd4bf" stroke-width="2.5" points="' + emaPoints + '" />' +
+          rawDots +
+        '</svg>';
+    }
+
+    function renderSmoothedHistoryTable(slice) {
+      const tbody = document.getElementById('smoothedHistoryTableBody');
+      const rev = [...slice].reverse();
+      tbody.innerHTML = rev.map(d => (
+        '<tr class="hover:bg-slate-900">' +
+          '<td class="py-1.5 text-slate-300">' + d.date + '</td>' +
+          '<td class="py-1.5 text-right ' + (d.rawWeight !== null ? 'text-white font-bold' : 'text-slate-600 italic') + '">' +
+            (d.rawWeight !== null ? d.rawWeight.toFixed(1) : (d.interpWeight.toFixed(1) + ' (prev)')) +
+          '</td>' +
+          '<td class="py-1.5 text-right text-teal-400 font-bold">' + d.emaWeight.toFixed(2) + '</td>' +
+          '<td class="py-1.5 text-right text-sky-400">' + d.sma7Weight.toFixed(2) + '</td>' +
+          '<td class="py-1.5 text-right ' + (d.kcal > 0 ? 'text-slate-200' : 'text-slate-600') + '">' + (d.kcal > 0 ? d.kcal : '--') + '</td>' +
+          '<td class="py-1.5 text-right text-slate-400">' + (d.p > 0 ? (d.p + 'g') : '--') + '</td>' +
+        '</tr>'
+      )).join('');
+    }
+
+    function applyImpliedTdeeToCutPlanner() {
+      const stats = analyzeWindowStats(currentDate, analysisWindowDays);
+      if (stats.impliedTdee && stats.impliedTdee > 1000) {
+        document.getElementById('cutBaselineKcal').value = stats.impliedTdee;
+        renderCutPlanner();
+      }
+    }
+
+    function renderCutPlanner() {
+      const baseKcal = parseFloat(document.getElementById('cutBaselineKcal').value) || 2600;
+      const pGkg = parseFloat(document.getElementById('cutProteinGkg').value) || 1.8;
+      const fGkg = parseFloat(document.getElementById('cutFatGkg').value) || 0.9;
+      const bw = getEffectiveWeightForDate(currentDate).weight || 90.5;
+
+      const targetP = Math.round(bw * pGkg);
+      const targetF = Math.round(bw * fGkg);
+      const fixedKcalPF = targetP * 4 + targetF * 9;
+
+      const tiers = [
+        { label: '-10% Mild Cut', pct: 0.10, border: 'border-teal-800/80' },
+        { label: '-15% Optimal Cut', pct: 0.15, border: 'border-sky-700' },
+        { label: '-20% Aggressive Cut', pct: 0.20, border: 'border-amber-800/80' }
+      ];
+
+      document.getElementById('cutTiersGrid').innerHTML = tiers.map(t => {
+        const targetKcal = Math.round(baseKcal * (1 - t.pct));
+        const remKcal = Math.max(0, targetKcal - fixedKcalPF);
+        const targetC = Math.round(remKcal / 4);
+        const estWeeklyLossKg = (((baseKcal - targetKcal) * 7) / 7700).toFixed(2);
+        return (
+          '<div class="bg-slate-950 border ' + t.border + ' rounded-xl p-3 space-y-1.5">' +
+            '<div class="flex items-center justify-between">' +
+              '<span class="text-xs font-bold text-slate-200 uppercase">' + t.label + '</span>' +
+              '<span class="text-[11px] font-mono text-teal-400">-' + estWeeklyLossKg + ' kg/wk</span>' +
+            '</div>' +
+            '<div class="text-2xl font-mono font-extrabold text-white">' + targetKcal + ' <span class="text-xs font-normal text-slate-400">kcal</span></div>' +
+            '<div class="text-xs font-mono space-y-0.5 pt-1 border-t border-slate-800/80">' +
+              '<div class="flex justify-between"><span class="text-sky-400">Protein (' + pGkg + ' g/kg):</span><span class="font-bold text-white">' + targetP + 'g</span></div>' +
+              '<div class="flex justify-between"><span class="text-amber-400">Fats (' + fGkg + ' g/kg):</span><span class="font-bold text-white">' + targetF + 'g</span></div>' +
+              '<div class="flex justify-between"><span class="text-emerald-400">Carbs (Remaining):</span><span class="font-bold text-white">' + targetC + 'g</span></div>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+    }
+
+    // =========================================================================
+    // NAVIGATION & BACKUP UTILITIES
+    // =========================================================================
+    function switchTab(tab) {
+      activeTab = tab;
+      ['log', 'recipe', 'db', 'stats'].forEach(t => {
+        const view = document.getElementById('view-' + t);
+        const btn = document.getElementById('tab-' + t);
+        if (!view || !btn) return;
+        if (t === tab) {
+          view.classList.remove('hidden');
+          btn.className = 'py-1.5 px-2 rounded text-center bg-teal-600 text-slate-950 font-bold transition';
+        } else {
+          view.classList.add('hidden');
+          btn.className = 'py-1.5 px-2 rounded text-center text-slate-300 hover:bg-slate-800 transition';
+        }
+      });
+      renderAll();
+    }
+
+    function shiftDate(deltaDays) {
+      currentDate = addDaysIso(currentDate, deltaDays);
+      renderAll();
+    }
+
+    function onDateChange(val) {
+      if (val) {
+        currentDate = val;
+        renderAll();
+      }
+    }
+
+    function jumpToToday() {
+      currentDate = getTodayIso();
+      renderAll();
+    }
+
+    function exportBackupJson() {
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(state, null, 2));
+      const a = document.createElement('a');
+      a.setAttribute('href', dataStr);
+      a.setAttribute('download', 'macro_tracker_backup_' + currentDate + '.json');
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function downloadSelfHtml() {
+      const htmlContent = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'index.html';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function importBackupJson(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const imported = JSON.parse(e.target.result);
+          if (imported && typeof imported === 'object') {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(imported));
+            loadState();
+            renderAll();
+            document.getElementById('exportStatusMsg').textContent = 'Backup restored successfully!';
+          }
+        } catch (err) {
+          alert('Invalid JSON backup file');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function copyDailySummaryTsv() {
+      const series = buildSmoothedDailySeries(currentDate, 28);
+      const header = ['Date', 'Scale_Weight_kg', 'EMA_Trend_kg', 'Kcal', 'Protein_g'].join('\t');
+      const rows = series.map(d => [
+        d.date,
+        d.rawWeight !== null ? d.rawWeight.toFixed(1) : '',
+        d.emaWeight.toFixed(2),
+        d.kcal,
+        d.p
+      ].join('\t'));
+      navigator.clipboard.writeText([header, ...rows].join('\n')).then(() => {
+        document.getElementById('exportStatusMsg').textContent = 'Copied 28-day TSV to clipboard!';
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderAll() {
+      try { renderHeader(); } catch (e) { console.error(e); }
+      try { renderDailyLog(); } catch (e) { console.error(e); }
+      try { renderLogFoodSelector(); } catch (e) { console.error(e); }
+      try { renderRecipeBuilder(); } catch (e) { console.error(e); }
+      try { renderDatabaseTable(); } catch (e) { console.error(e); }
+      if (activeTab === 'stats') {
+        try { renderStatsAndPlanner(); } catch (e) { console.error(e); }
+      }
+    }
+
+    // Safe Boot
+    loadState();
+    switchTab('log');
+  </script>
+</body>
+</html>
