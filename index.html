@@ -556,9 +556,9 @@
         <div id="cutTiersGrid" class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2"></div>
       </div>
 
-      <!-- 3. Backup / Export JSON & Self-Download HTML -->
+      <!-- 3. Backup / Export JSON & Google Sheets TSV -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2">
-        <h2 class="text-sm font-bold text-slate-100 uppercase tracking-wide">Backup, Google Sheets & Clean File Export</h2>
+        <h2 class="text-sm font-bold text-slate-100 uppercase tracking-wide">Backup & Google Sheets Export</h2>
         <div class="flex flex-wrap gap-2">
           <button type="button" onclick="exportBackupJson()" class="bg-teal-700 hover:bg-teal-600 text-slate-950 font-bold text-xs px-3 py-2 rounded-lg transition">Export Backup (.json)</button>
           <label class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-3 py-2 rounded-lg cursor-pointer transition">
@@ -566,7 +566,6 @@
             <input type="file" accept=".json" onchange="importBackupJson(event)" class="hidden" />
           </label>
           <button type="button" onclick="copyDailySummaryTsv()" class="bg-slate-800 hover:bg-slate-700 text-teal-300 font-semibold text-xs px-3 py-2 rounded-lg transition">Copy 28d TSV (Google Sheets)</button>
-          <button type="button" onclick="downloadSelfHtml()" class="bg-sky-700 hover:bg-sky-600 text-slate-950 font-bold text-xs px-3 py-2 rounded-lg transition">Download index.html</button>
         </div>
         <div id="exportStatusMsg" class="text-xs font-mono text-teal-400"></div>
       </div>
@@ -614,13 +613,12 @@
       logs: {}
     };
 
-    // Universal Safe Normalizer for any v1 schema variation
     function normalizeFoodItem(raw, idx) {
       if (!raw || typeof raw !== 'object') return null;
-      const p = Number(raw.p ?? raw.protein ?? raw.proteins ?? 0) || 0;
-      const f = Number(raw.f ?? raw.fat ?? raw.fats ?? 0) || 0;
-      const c = Number(raw.c ?? raw.carbs ?? raw.carb ?? 0) || 0;
-      const kcal = Number(raw.kcal ?? raw.calories ?? raw.cal ?? (p * 4 + f * 9 + c * 4)) || 0;
+      const p = Number(raw.p ?? raw.p100 ?? raw.protein ?? raw.proteins ?? 0) || 0;
+      const f = Number(raw.f ?? raw.f100 ?? raw.fat ?? raw.fats ?? 0) || 0;
+      const c = Number(raw.c ?? raw.c100 ?? raw.carbs ?? raw.carb ?? 0) || 0;
+      const kcal = Number(raw.kcal ?? raw.kcal100 ?? raw.calories ?? raw.cal ?? (p * 4 + f * 9 + c * 4)) || 0;
       return {
         id: String(raw.id || ('f_mig_' + idx + '_' + Date.now())),
         name: String(raw.name || raw.title || 'Unnamed Food'),
@@ -631,16 +629,52 @@
       };
     }
 
-    function normalizeLogEntry(raw, idx) {
+    function normalizeLogEntry(raw, idx, foodsList) {
       if (!raw || typeof raw !== 'object') return null;
       const grams = Number(raw.grams ?? raw.weight ?? raw.amount ?? 100) || 0;
-      const p = Number(raw.p ?? raw.protein ?? 0) || 0;
-      const f = Number(raw.f ?? raw.fat ?? 0) || 0;
-      const c = Number(raw.c ?? raw.carbs ?? 0) || 0;
-      const kcal = Number(raw.kcal ?? raw.calories ?? (p * 4 + f * 9 + c * 4)) || 0;
+      const mult = grams / 100;
+      const entryName = String(raw.name || raw.foodName || raw.title || 'Entry').trim();
+
+      let p = Number(raw.p ?? raw.protein ?? 0) || 0;
+      let f = Number(raw.f ?? raw.fat ?? 0) || 0;
+      let c = Number(raw.c ?? raw.carbs ?? 0) || 0;
+      let kcal = Number(raw.kcal ?? raw.calories ?? 0) || 0;
+
+      // Case 1: Entry stored per-100g fields (p100, f100, c100, kcal100)
+      if (kcal === 0 && (raw.p100 !== undefined || raw.f100 !== undefined || raw.c100 !== undefined || raw.kcal100 !== undefined)) {
+        const p100 = Number(raw.p100) || 0;
+        const f100 = Number(raw.f100) || 0;
+        const c100 = Number(raw.c100) || 0;
+        const k100 = Number(raw.kcal100) || (p100 * 4 + f100 * 9 + c100 * 4);
+        p = p100 * mult;
+        f = f100 * mult;
+        c = c100 * mult;
+        kcal = k100 * mult;
+      }
+
+      // Case 2: Entry has 0 kcal and 0 macros -> Auto-Heal from Food DB by ID or Name
+      if (kcal === 0 && p === 0 && f === 0 && c === 0 && Array.isArray(foodsList) && grams > 0) {
+        const lowerName = entryName.toLowerCase();
+        const match = foodsList.find(fd =>
+          (raw.foodId && fd.id === raw.foodId) ||
+          String(fd.name || '').trim().toLowerCase() === lowerName
+        );
+        if (match) {
+          p = (Number(match.p) || 0) * mult;
+          f = (Number(match.f) || 0) * mult;
+          c = (Number(match.c) || 0) * mult;
+          const baseKcal = Number(match.kcal) || (match.p * 4 + match.f * 9 + match.c * 4);
+          kcal = baseKcal * mult;
+        }
+      }
+
+      if (kcal === 0 && (p > 0 || f > 0 || c > 0)) {
+        kcal = p * 4 + f * 9 + c * 4;
+      }
+
       return {
         id: String(raw.id || ('log_mig_' + idx + '_' + Date.now())),
-        name: String(raw.name || raw.foodName || raw.title || 'Entry'),
+        name: entryName,
         grams: Math.round(grams * 10) / 10,
         p: Math.round(p * 10) / 10,
         f: Math.round(f * 10) / 10,
@@ -651,7 +685,6 @@
 
     function loadState() {
       try {
-        // Scan primary key or any existing macro tracker key in localStorage
         let raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) {
           for (let i = 0; i < localStorage.length; i++) {
@@ -670,33 +703,47 @@
         state.bodyweight = Number(parsed.bodyweight ?? parsed.weight ?? parsed.settings?.bodyweight ?? 90.5) || 90.5;
         state.weightLogs = (parsed.weightLogs && typeof parsed.weightLogs === 'object') ? parsed.weightLogs : {};
 
-        // Migrate foods array from any possible property name
+        // 1. Load Foods DB first so we can auto-heal 0-kcal logs against it
         const rawFoods = parsed.foods || parsed.foodDb || parsed.database || parsed.items || [];
         if (Array.isArray(rawFoods) && rawFoods.length > 0) {
           const cleanFoods = rawFoods.map((it, i) => normalizeFoodItem(it, i)).filter(Boolean);
           if (cleanFoods.length > 0) state.foods = cleanFoods;
         }
 
-        // Migrate daily logs from any possible property structure
+        // 2. Load & Auto-Heal Daily Logs
         const rawLogs = parsed.logs || parsed.dailyLogs || parsed.days || parsed.history || {};
         const cleanLogs = {};
+        let healedAny = false;
+
         if (rawLogs && typeof rawLogs === 'object') {
           Object.keys(rawLogs).forEach(dateKey => {
             const dayVal = rawLogs[dateKey];
+            let sourceArr = [];
             if (Array.isArray(dayVal)) {
-              cleanLogs[dateKey] = dayVal.map((it, i) => normalizeLogEntry(it, i)).filter(Boolean);
+              sourceArr = dayVal;
             } else if (dayVal && typeof dayVal === 'object') {
-              const arr = dayVal.entries || dayVal.items || dayVal.meals || dayVal.logs || [];
-              if (Array.isArray(arr)) {
-                cleanLogs[dateKey] = arr.map((it, i) => normalizeLogEntry(it, i)).filter(Boolean);
-              }
+              sourceArr = dayVal.entries || dayVal.items || dayVal.meals || dayVal.logs || [];
               if (dayVal.weight && !state.weightLogs[dateKey]) {
                 state.weightLogs[dateKey] = Number(dayVal.weight);
               }
             }
+            if (Array.isArray(sourceArr)) {
+              cleanLogs[dateKey] = sourceArr.map((it, i) => {
+                const beforeKcal = Number(it?.kcal) || 0;
+                const norm = normalizeLogEntry(it, i, state.foods);
+                if (norm && beforeKcal === 0 && norm.kcal > 0) {
+                  healedAny = true;
+                }
+                return norm;
+              }).filter(Boolean);
+            }
           });
         }
         state.logs = cleanLogs;
+
+        if (healedAny) {
+          saveState();
+        }
       } catch (e) {
         console.error('Error loading state:', e);
       }
@@ -1083,6 +1130,7 @@
       if (!Array.isArray(state.logs[currentDate])) state.logs[currentDate] = [];
       state.logs[currentDate].push({
         id: 'log_' + Date.now(),
+        foodId: food.id,
         name: food.name,
         grams: grams,
         p: Math.round(food.p * mult * 10) / 10,
@@ -1127,9 +1175,11 @@
       const grams = parseFloat(document.getElementById('quickGrams').value) || 0;
       if (grams <= 0) return;
 
+      let foodId = null;
       if (document.getElementById('quickSaveToDb').checked && name !== 'Quick Entry') {
+        foodId = 'f_' + Date.now();
         state.foods.unshift({
-          id: 'f_' + Date.now(),
+          id: foodId,
           name: name,
           p: p100,
           f: f100,
@@ -1142,6 +1192,7 @@
       if (!Array.isArray(state.logs[currentDate])) state.logs[currentDate] = [];
       state.logs[currentDate].push({
         id: 'log_' + Date.now(),
+        foodId: foodId,
         name: name,
         grams: grams,
         p: Math.round(p100 * mult * 10) / 10,
@@ -1327,6 +1378,7 @@
         if (!Array.isArray(state.logs[currentDate])) state.logs[currentDate] = [];
         state.logs[currentDate].push({
           id: 'log_' + Date.now(),
+          foodId: newFood.id,
           name: newFood.name,
           grams: 200,
           p: Math.round(newFood.p * 2 * 10) / 10,
@@ -1588,19 +1640,6 @@
       a.remove();
     }
 
-    function downloadSelfHtml() {
-      const htmlContent = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
-      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'index.html';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }
-
     function importBackupJson(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -1656,7 +1695,7 @@
       }
     }
 
-    // Safe Boot
+    // Safe Boot + Auto-Heal 0-kcal logs
     loadState();
     switchTab('log');
   </script>
