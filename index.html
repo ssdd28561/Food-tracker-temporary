@@ -1,0 +1,2361 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MACRO // UTIL — Daily Intake & Recipe Yield Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e2e',
+                            950: '#090d16',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #090d16;
+            color: #e2e8f0;
+        }
+        
+        .tabular-nums {
+            font-variant-numeric: tabular-nums;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Custom scrollbar for dense tables */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-sky-500 selection:text-white">
+
+    <!-- Top Technical Header & Global Settings Bar -->
+    <header class="border-b border-slate-800 bg-slate-900/90 sticky top-0 z-30 backdrop-blur">
+        <div class="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
+            <!-- Brand & Status -->
+            <div class="flex items-center space-x-3">
+                <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                    <span class="font-mono font-bold tracking-tight text-white text-base">MACRO//UTIL</span>
+                </div>
+                <span class="text-xs font-mono text-slate-400 border border-slate-700 rounded px-1.5 py-0.5 bg-slate-800/60 hidden sm:inline-block">LOCAL_STORAGE_ACTIVE</span>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <nav class="flex items-center space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 order-3 lg:order-2 w-full lg:w-auto justify-between sm:justify-start overflow-x-auto">
+                <button onclick="switchTab('log')" id="tab-btn-log" class="px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap bg-slate-800 text-white shadow-sm">
+                    1. Daily Log
+                </button>
+                <button onclick="switchTab('recipes')" id="tab-btn-recipes" class="px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap text-slate-400 hover:text-slate-200">
+                    2. Homemade Meal Builder
+                </button>
+                <button onclick="switchTab('database')" id="tab-btn-database" class="px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap text-slate-400 hover:text-slate-200">
+                    3. Food Database (<span id="nav-db-count" class="tabular-nums">0</span>)
+                </button>
+                <button onclick="switchTab('stats')" id="tab-btn-stats" class="px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap text-slate-400 hover:text-slate-200">
+                    4. Baseline &amp; 10-15% Cut Planner
+                </button>
+            </nav>
+
+            <!-- Compact Bodyweight & Active Mode Indicator -->
+            <div class="flex items-center space-x-3 order-2 lg:order-3 text-xs">
+                <div class="flex items-center bg-slate-950 border border-slate-800 rounded-md px-2.5 py-1">
+                    <label for="global-bw-input" class="text-slate-400 mr-2 font-medium">Bodyweight:</label>
+                    <input type="number" id="global-bw-input" step="0.1" min="30" max="300" 
+                        class="w-14 bg-transparent text-right font-mono font-semibold text-sky-400 focus:outline-none border-b border-transparent focus:border-sky-500"
+                        onchange="updateSettingsFromHeader()">
+                    <span class="text-slate-500 ml-1 font-mono">kg</span>
+                </div>
+                <div class="hidden sm:flex items-center bg-slate-950 border border-slate-800 rounded-md px-2.5 py-1">
+                    <span class="text-slate-400 mr-1.5">Ref Target:</span>
+                    <select id="global-target-mode" onchange="updateSettingsFromHeader()" class="bg-transparent font-mono text-emerald-400 font-semibold focus:outline-none cursor-pointer">
+                        <option value="none" class="bg-slate-900 text-slate-200">Track Only (No Cap)</option>
+                        <option value="maint" class="bg-slate-900 text-slate-200">Avg Maintenance</option>
+                        <option value="cut10" class="bg-slate-900 text-slate-200">-10% Deficit</option>
+                        <option value="cut15" class="bg-slate-900 text-slate-200">-15% Deficit</option>
+                        <option value="custom" class="bg-slate-900 text-slate-200">Custom Kcal</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Non-intrusive Toast Banner for status notifications -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-5">
+
+        <!-- ========================================== -->
+        <!-- TAB 1: DAILY LOG & DASHBOARD               -->
+        <!-- ========================================== -->
+        <section id="tab-log" class="space-y-5">
+            
+            <!-- Date Bar & Rolling Averages Strip -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-900 border border-slate-800 rounded-lg p-3">
+                <!-- Date Controls -->
+                <div class="flex items-center space-x-2">
+                    <button onclick="changeDate(-1)" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 text-xs font-mono transition" title="Previous Day">
+                        &larr; Prev
+                    </button>
+                    <div class="relative flex items-center">
+                        <input type="date" id="current-date-picker" onchange="onDatePickerChange(this.value)"
+                            class="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm font-mono font-semibold text-white focus:outline-none focus:border-sky-500">
+                    </div>
+                    <button onclick="changeDate(1)" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 text-xs font-mono transition" title="Next Day">
+                        Next &rarr;
+                    </button>
+                    <button onclick="setToday()" id="btn-today" class="px-2.5 py-1.5 bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-800 rounded text-xs font-mono transition">
+                        Today
+                    </button>
+                    <span id="current-day-label" class="text-xs font-mono text-slate-400 pl-1 hidden sm:inline"></span>
+                </div>
+
+                <!-- 7-Day Rolling Baseline Context -->
+                <div class="flex flex-wrap items-center gap-4 text-xs border-t md:border-t-0 pt-2 md:pt-0 border-slate-800">
+                    <div class="flex items-center space-x-1.5">
+                        <span class="text-slate-400">7d Logged Avg:</span>
+                        <span id="header-7d-kcal" class="tabular-nums font-bold text-slate-200">-- kcal</span>
+                        <span id="header-7d-macros" class="tabular-nums text-slate-400">(P:--g F:--g C:--g)</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="copyPreviousDayLog()" class="text-xs font-mono text-slate-400 hover:text-sky-400 underline decoration-slate-700 hover:decoration-sky-400 transition">
+                            Copy Yesterday's Meals
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Daily Summary Metrics Bar -->
+            <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                <!-- Calories Card -->
+                <div class="col-span-2 lg:col-span-1 bg-slate-900 border border-slate-800 rounded-lg p-3.5 flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono uppercase tracking-wider text-slate-400">Total Energy</span>
+                        <span id="day-kcal-diff-badge" class="text-[11px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">NO CAP</span>
+                    </div>
+                    <div class="my-1.5 flex items-baseline space-x-1.5">
+                        <span id="day-total-kcal" class="text-2xl sm:text-3xl font-bold tabular-nums text-white">0</span>
+                        <span class="text-xs font-mono text-slate-400">kcal</span>
+                    </div>
+                    <div class="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800/80">
+                        <div id="day-kcal-bar" class="bg-emerald-500 h-full transition-all duration-200" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Protein Card -->
+                <div class="bg-slate-900 border border-slate-800 rounded-lg p-3.5 flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono uppercase tracking-wider text-sky-400 font-semibold">Protein</span>
+                        <span id="day-p-pct" class="text-xs font-mono text-slate-400 tabular-nums">0%</span>
+                    </div>
+                    <div class="my-1.5 flex items-baseline justify-between">
+                        <div>
+                            <span id="day-total-p" class="text-2xl font-bold tabular-nums text-white">0.0</span>
+                            <span class="text-xs font-mono text-slate-400">g</span>
+                        </div>
+                        <div class="text-right">
+                            <span id="day-p-per-kg" class="text-xs font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800/70 tabular-nums">0.00 g/kg</span>
+                        </div>
+                    </div>
+                    <div class="text-[11px] font-mono text-slate-400 flex justify-between">
+                        <span><span id="day-p-kcal" class="tabular-nums">0</span> kcal</span>
+                        <span id="day-p-target-hint">Ref: --g</span>
+                    </div>
+                </div>
+
+                <!-- Fats Card -->
+                <div class="bg-slate-900 border border-slate-800 rounded-lg p-3.5 flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono uppercase tracking-wider text-amber-400 font-semibold">Fats</span>
+                        <span id="day-f-pct" class="text-xs font-mono text-slate-400 tabular-nums">0%</span>
+                    </div>
+                    <div class="my-1.5 flex items-baseline justify-between">
+                        <div>
+                            <span id="day-total-f" class="text-2xl font-bold tabular-nums text-white">0.0</span>
+                            <span class="text-xs font-mono text-slate-400">g</span>
+                        </div>
+                        <span id="day-f-per-kg" class="text-xs font-mono text-slate-400 tabular-nums">0.00 g/kg</span>
+                    </div>
+                    <div class="text-[11px] font-mono text-slate-400 flex justify-between">
+                        <span><span id="day-f-kcal" class="tabular-nums">0</span> kcal</span>
+                        <span>9 kcal/g</span>
+                    </div>
+                </div>
+
+                <!-- Carbs Card -->
+                <div class="bg-slate-900 border border-slate-800 rounded-lg p-3.5 flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono uppercase tracking-wider text-purple-400 font-semibold">Carbs</span>
+                        <span id="day-c-pct" class="text-xs font-mono text-slate-400 tabular-nums">0%</span>
+                    </div>
+                    <div class="my-1.5 flex items-baseline justify-between">
+                        <div>
+                            <span id="day-total-c" class="text-2xl font-bold tabular-nums text-white">0.0</span>
+                            <span class="text-xs font-mono text-slate-400">g</span>
+                        </div>
+                        <span id="day-c-per-kg" class="text-xs font-mono text-slate-400 tabular-nums">0.00 g/kg</span>
+                    </div>
+                    <div class="text-[11px] font-mono text-slate-400 flex justify-between">
+                        <span><span id="day-c-kcal" class="tabular-nums">0</span> kcal</span>
+                        <span>4 kcal/g</span>
+                    </div>
+                </div>
+
+                <!-- Total Food Mass & Macro Split Visual -->
+                <div class="col-span-2 lg:col-span-1 bg-slate-900 border border-slate-800 rounded-lg p-3.5 flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono uppercase tracking-wider text-slate-400">Macro Ratio</span>
+                        <span class="text-xs font-mono text-slate-400"><span id="day-total-mass" class="tabular-nums text-slate-200 font-semibold">0</span>g food</span>
+                    </div>
+                    <!-- Stacked Macro Bar -->
+                    <div class="my-2">
+                        <div class="w-full h-3 bg-slate-950 rounded overflow-hidden flex border border-slate-800">
+                            <div id="split-bar-p" class="bg-sky-500 h-full transition-all" style="width: 33.3%" title="Protein"></div>
+                            <div id="split-bar-f" class="bg-amber-500 h-full transition-all" style="width: 33.3%" title="Fats"></div>
+                            <div id="split-bar-c" class="bg-purple-500 h-full transition-all" style="width: 33.4%" title="Carbs"></div>
+                        </div>
+                    </div>
+                    <div class="flex justify-between text-[11px] font-mono text-slate-400 tabular-nums">
+                        <span class="text-sky-400">P:<span id="split-lbl-p">0</span>%</span>
+                        <span class="text-amber-400">F:<span id="split-lbl-f">0</span>%</span>
+                        <span class="text-purple-400">C:<span id="split-lbl-c">0</span>%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Daily Workspace: Left = Entry Forms, Right = Logged Items Table -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                
+                <!-- Left Column: Fast Add Panels (5 cols on lg) -->
+                <div class="lg:col-span-5 space-y-4">
+                    
+                    <!-- Panel A: Add from Saved Foods / Homemade Recipes -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h2 class="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                                Add Saved Food or Homemade Dish
+                            </h2>
+                            <span class="text-[11px] font-mono text-slate-500">Per 100g scale</span>
+                        </div>
+
+                        <div class="space-y-3">
+                            <!-- Search / Filter Select -->
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Search Database (Staples &amp; Homemade Recipes)</label>
+                                <input type="text" id="quick-search-input" placeholder="Type to filter (e.g. chicken, wpc80, soup, oats)..." 
+                                    oninput="filterQuickFoodSelect()"
+                                    class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 mb-1.5">
+                                
+                                <select id="quick-food-select" size="5" onchange="updateQuickAddPreview()"
+                                    class="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-sky-500">
+                                    <!-- Populated by JS -->
+                                </select>
+                            </div>
+
+                            <!-- Weight Input & Live Preview -->
+                            <div class="grid grid-cols-12 gap-2 items-end pt-1">
+                                <div class="col-span-5">
+                                    <label for="quick-weight-input" class="block text-xs text-slate-400 mb-1">Consumed Weight (g)</label>
+                                    <div class="relative">
+                                        <input type="number" id="quick-weight-input" value="100" min="1" max="5000" step="1"
+                                            oninput="updateQuickAddPreview()"
+                                            onkeydown="if(event.key==='Enter') addSelectedFoodToLog()"
+                                            class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm font-mono font-bold text-white focus:outline-none focus:border-sky-500">
+                                        <span class="absolute right-2.5 top-2 text-xs font-mono text-slate-500">g</span>
+                                    </div>
+                                </div>
+                                <!-- Fast gram preset buttons -->
+                                <div class="col-span-7 flex flex-wrap gap-1">
+                                    <button type="button" onclick="setQuickWeight(30)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-mono">30g</button>
+                                    <button type="button" onclick="setQuickWeight(50)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-mono">50g</button>
+                                    <button type="button" onclick="setQuickWeight(100)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-mono">100g</button>
+                                    <button type="button" onclick="setQuickWeight(150)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-mono">150g</button>
+                                    <button type="button" onclick="setQuickWeight(200)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-mono">200g</button>
+                                    <button type="button" onclick="setQuickWeight(250)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-mono">250g</button>
+                                    <button type="button" onclick="setQuickWeight(300)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-mono">300g</button>
+                                </div>
+                            </div>
+
+                            <!-- Live Macro Preview Box -->
+                            <div id="quick-add-preview" class="bg-slate-950 border border-slate-800/90 rounded p-2.5 flex items-center justify-between text-xs font-mono">
+                                <span class="text-slate-400">Preview:</span>
+                                <div class="space-x-3 tabular-nums">
+                                    <span class="text-white font-bold"><span id="prev-kcal">0</span> kcal</span>
+                                    <span class="text-sky-400">P:<span id="prev-p">0.0</span>g</span>
+                                    <span class="text-amber-400">F:<span id="prev-f">0.0</span>g</span>
+                                    <span class="text-purple-400">C:<span id="prev-c">0.0</span>g</span>
+                                </div>
+                            </div>
+
+                            <button type="button" onclick="addSelectedFoodToLog()" 
+                                class="w-full py-2 px-4 bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs font-mono uppercase tracking-wider rounded transition shadow-sm">
+                                + Log Selected Item (Enter)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Panel B: Direct Label Entry (Package / Barcode Label or One-Off) -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h2 class="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                Direct Package Label Entry
+                            </h2>
+                            <span class="text-[11px] font-mono text-slate-500">Values per 100g</span>
+                        </div>
+
+                        <form id="direct-label-form" onsubmit="handleDirectLabelSubmit(event)" class="space-y-3">
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Food / Product Name</label>
+                                <input type="text" id="dl-name" required placeholder="e.g. Greek Yogurt 2%, Rye Bread, Protein Bar"
+                                    class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                            </div>
+
+                            <!-- Per 100g macros row -->
+                            <div class="grid grid-cols-4 gap-2">
+                                <div>
+                                    <label class="block text-[11px] font-mono text-sky-400 mb-1">P / 100g</label>
+                                    <input type="number" id="dl-p" step="0.1" min="0" max="100" required placeholder="0"
+                                        oninput="autoCalcDirectLabelKcal()"
+                                        class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-sky-500">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-mono text-amber-400 mb-1">F / 100g</label>
+                                    <input type="number" id="dl-f" step="0.1" min="0" max="100" required placeholder="0"
+                                        oninput="autoCalcDirectLabelKcal()"
+                                        class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-amber-500">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-mono text-purple-400 mb-1">C / 100g</label>
+                                    <input type="number" id="dl-c" step="0.1" min="0" max="100" required placeholder="0"
+                                        oninput="autoCalcDirectLabelKcal()"
+                                        class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-purple-500">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-mono text-slate-300 mb-1">kcal / 100g</label>
+                                    <input type="number" id="dl-kcal" step="1" min="0" max="900" required placeholder="Auto"
+                                        class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-emerald-500">
+                                </div>
+                            </div>
+
+                            <!-- Consumed Weight & Save Checkbox -->
+                            <div class="grid grid-cols-12 gap-3 items-center pt-1">
+                                <div class="col-span-5">
+                                    <label class="block text-xs text-slate-400 mb-1">Portion Eaten (g)</label>
+                                    <input type="number" id="dl-weight" value="100" step="1" min="1" max="5000" required
+                                        class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono font-bold text-white focus:outline-none focus:border-emerald-500">
+                                </div>
+                                <div class="col-span-7 pt-4">
+                                    <label class="inline-flex items-center space-x-2 cursor-pointer select-none">
+                                        <input type="checkbox" id="dl-save-db" checked
+                                            class="rounded bg-slate-950 border-slate-700 text-emerald-500 focus:ring-0">
+                                        <span class="text-xs text-slate-300">Also save to Food DB</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <button type="submit" 
+                                class="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs font-mono uppercase tracking-wider rounded transition shadow-sm">
+                                + Log Label Item
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Right Column: Logged Entries Table for Selected Day (7 cols on lg) -->
+                <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-lg overflow-hidden flex flex-col">
+                    <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+                        <div class="flex items-center space-x-2">
+                            <h2 class="text-xs font-mono uppercase tracking-wider text-slate-200 font-semibold">
+                                Daily Intake Log
+                            </h2>
+                            <span id="log-count-badge" class="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 tabular-nums">0 items</span>
+                        </div>
+                        <button onclick="clearCurrentDayLog()" id="btn-clear-day" class="text-xs font-mono text-rose-400 hover:text-rose-300 hidden">
+                            Clear Day
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b border-slate-800 bg-slate-950/60 text-[11px] font-mono uppercase text-slate-400">
+                                    <th class="py-2.5 pl-4 pr-2">Food / Meal Item</th>
+                                    <th class="py-2.5 px-2 text-right w-28">Weight (g)</th>
+                                    <th class="py-2.5 px-2 text-right">kcal</th>
+                                    <th class="py-2.5 px-2 text-right text-sky-400">P (g)</th>
+                                    <th class="py-2.5 px-2 text-right text-amber-400">F (g)</th>
+                                    <th class="py-2.5 px-2 text-right text-purple-400">C (g)</th>
+                                    <th class="py-2.5 pl-2 pr-4 text-right w-10"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="daily-log-tbody" class="divide-y divide-slate-800/70 text-sm">
+                                <!-- Populated by JS -->
+                            </tbody>
+                            <tfoot id="daily-log-tfoot" class="border-t-2 border-slate-700 bg-slate-950 font-mono text-xs font-bold text-white">
+                                <!-- Totals row populated by JS -->
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <!-- Empty state -->
+                    <div id="daily-log-empty" class="p-10 text-center space-y-2">
+                        <p class="text-sm text-slate-400 font-mono">No meals logged for this date yet.</p>
+                        <p class="text-xs text-slate-500">Select an item on the left or enter a nutrition label to start tracking.</p>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+
+        <!-- ========================================== -->
+        <!-- TAB 2: HOMEMADE RECIPE / MEAL BUILDER      -->
+        <!-- ========================================== -->
+        <section id="tab-recipes" class="hidden space-y-5">
+            
+            <!-- Explanation / Technical Header -->
+            <div class="bg-slate-900 border border-slate-800 rounded-lg p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 class="text-sm font-mono uppercase tracking-wider text-sky-400 font-bold">
+                        Homemade Meal &amp; Cooked Yield Calculator
+                    </h1>
+                    <p class="text-xs text-slate-400 mt-1 max-w-3xl">
+                        Weigh your raw ingredients, enter the <strong class="text-slate-200">Final Cooked Weight</strong> of the entire pot/pan after cooking (accounting for moisture evaporation in baking/frying or water absorption in soups/porridges), and save the exact <strong class="text-slate-200">per 100g cooked</strong> macros to your Food Database.
+                    </p>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button onclick="resetRecipeBuilder()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-xs font-mono">
+                        Reset / New Recipe
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                
+                <!-- Left 8 Cols: Recipe Workspace -->
+                <div class="lg:col-span-8 space-y-4">
+                    
+                    <!-- Recipe Name & Add Ingredient Controls -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-lg p-4 space-y-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                            <div class="sm:col-span-8">
+                                <label class="block text-xs font-mono uppercase text-slate-400 mb-1">Recipe / Homemade Dish Name</label>
+                                <input type="text" id="rec-name" placeholder="e.g. Homemade Chicken Buckwheat Stew, Sous-Vide Pork Loin, Cottage Cheese Bake"
+                                    class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-white font-medium placeholder-slate-500 focus:outline-none focus:border-sky-500">
+                            </div>
+                            <div class="sm:col-span-4">
+                                <label class="block text-xs font-mono uppercase text-slate-400 mb-1">Empty Pot / Pan Tare (Optional)</label>
+                                <div class="relative">
+                                    <input type="number" id="rec-pot-tare" value="0" min="0" step="1"
+                                        oninput="onPotTareOrGrossChange()"
+                                        placeholder="0"
+                                        class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm font-mono text-slate-300 focus:outline-none focus:border-sky-500">
+                                    <span class="absolute right-2.5 top-2 text-xs font-mono text-slate-500">g</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Add Ingredient From DB Bar -->
+                        <div class="border-t border-slate-800 pt-3">
+                            <label class="block text-xs font-mono uppercase text-slate-400 mb-2">Add Raw Ingredient from Database</label>
+                            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                                <div class="sm:col-span-7">
+                                    <select id="rec-db-select" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-sky-500">
+                                        <!-- Populated by JS -->
+                                    </select>
+                                </div>
+                                <div class="sm:col-span-3 relative">
+                                    <input type="number" id="rec-db-weight" value="100" min="1" step="1" placeholder="Raw weight (g)"
+                                        onkeydown="if(event.key==='Enter') addDbIngredientToRecipe()"
+                                        class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-sky-500">
+                                    <span class="absolute right-2.5 top-2 text-xs font-mono text-slate-500">g</span>
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <button type="button" onclick="addDbIngredientToRecipe()" class="w-full h-full py-2 px-3 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs font-semibold rounded transition">
+                                        + Add
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Add Custom Raw Ingredient Bar (or Water/Zero-kcal liquid) -->
+                        <div class="border-t border-slate-800 pt-3">
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="text-xs font-mono uppercase text-slate-400">Or Add Custom Ingredient / Water</label>
+                                <button type="button" onclick="addWaterToRecipe(500)" class="text-[11px] font-mono text-sky-400 hover:text-sky-300 bg-sky-950/60 border border-sky-800/70 px-2 py-0.5 rounded">
+                                    + Add 500g Water (0 kcal)
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-12 gap-2">
+                                <input type="text" id="rec-cust-name" placeholder="Ingredient name" class="col-span-2 sm:col-span-3 bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white">
+                                <input type="number" id="rec-cust-weight" placeholder="Weight (g)" step="1" min="1" class="col-span-1 sm:col-span-2 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs font-mono text-white">
+                                <input type="number" id="rec-cust-p" placeholder="P/100g" step="0.1" min="0" oninput="autoCalcCustomRecKcal()" class="col-span-1 sm:col-span-1.5 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs font-mono text-sky-300">
+                                <input type="number" id="rec-cust-f" placeholder="F/100g" step="0.1" min="0" oninput="autoCalcCustomRecKcal()" class="col-span-1 sm:col-span-1.5 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs font-mono text-amber-300">
+                                <input type="number" id="rec-cust-c" placeholder="C/100g" step="0.1" min="0" oninput="autoCalcCustomRecKcal()" class="col-span-1 sm:col-span-1.5 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs font-mono text-purple-300">
+                                <input type="number" id="rec-cust-kcal" placeholder="kcal/100" step="1" min="0" class="col-span-1 sm:col-span-1.5 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs font-mono text-white">
+                                <button type="button" onclick="addCustomIngredientToRecipe()" class="col-span-2 sm:col-span-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-xs font-mono">
+                                    Add
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ingredients Table -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+                        <div class="px-4 py-2.5 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center">
+                            <span class="text-xs font-mono uppercase text-slate-300 font-semibold">Raw Ingredients List</span>
+                            <span id="rec-ing-count" class="text-xs font-mono text-slate-500">0 ingredients</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="border-b border-slate-800 bg-slate-950/40 text-[11px] font-mono uppercase text-slate-400">
+                                        <th class="py-2 pl-4 pr-2">Ingredient</th>
+                                        <th class="py-2 px-2 text-right w-28">Raw Weight (g)</th>
+                                        <th class="py-2 px-2 text-right">Total kcal</th>
+                                        <th class="py-2 px-2 text-right text-sky-400">P (g)</th>
+                                        <th class="py-2 px-2 text-right text-amber-400">F (g)</th>
+                                        <th class="py-2 px-2 text-right text-purple-400">C (g)</th>
+                                        <th class="py-2 pl-2 pr-4 text-right w-10"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rec-ingredients-tbody" class="divide-y divide-slate-800/70 text-xs sm:text-sm">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                                <tfoot id="rec-ingredients-tfoot" class="border-t-2 border-slate-700 bg-slate-950 font-mono text-xs font-bold text-white">
+                                    <!-- Raw Totals Populated by JS -->
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right 4 Cols: Cooked Weight Yield & Final Output Card -->
+                <div class="lg:col-span-4 space-y-4">
+                    <div class="bg-slate-900 border border-slate-800 rounded-lg p-4 space-y-4">
+                        <div class="border-b border-slate-800 pb-3">
+                            <span class="text-xs font-mono uppercase tracking-wider text-emerald-400 font-bold block">
+                                Step 2: Cooked Weight Adjustment
+                            </span>
+                            <p class="text-xs text-slate-400 mt-1">
+                                Enter the final weight after cooking to adjust macro density per 100g.
+                            </p>
+                        </div>
+
+                        <!-- Raw vs Cooked Weight Inputs -->
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center text-xs font-mono bg-slate-950 px-3 py-2 rounded border border-slate-800">
+                                <span class="text-slate-400">Total Raw Weight:</span>
+                                <span id="rec-raw-weight-display" class="text-slate-200 font-bold tabular-nums">0 g</span>
+                            </div>
+
+                            <!-- Optional Gross Pot + Food Helper -->
+                            <div id="rec-gross-helper-box" class="hidden bg-slate-950/70 p-2.5 rounded border border-slate-800 space-y-1.5">
+                                <label class="block text-[11px] font-mono text-slate-400">Cooked Food + Pot Gross Weight (g):</label>
+                                <input type="number" id="rec-gross-weight" placeholder="e.g. 2450" oninput="onPotTareOrGrossChange()"
+                                    class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs font-mono text-white">
+                                <p class="text-[10px] font-mono text-slate-500">Subtracts empty pot tare automatically.</p>
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between items-center mb-1">
+                                    <label for="rec-cooked-weight" class="text-xs font-mono uppercase text-white font-semibold">Final Cooked Weight (g)</label>
+                                    <button type="button" onclick="syncCookedToRawWeight()" class="text-[11px] font-mono text-sky-400 hover:underline">
+                                        Reset to Raw
+                                    </button>
+                                </div>
+                                <div class="relative">
+                                    <input type="number" id="rec-cooked-weight" value="0" min="1" step="1"
+                                        oninput="onManualCookedWeightChange()"
+                                        class="w-full bg-slate-950 border-2 border-emerald-600/80 rounded px-3 py-2.5 text-lg font-mono font-bold text-white focus:outline-none focus:border-emerald-400">
+                                    <span class="absolute right-3 top-3 text-xs font-mono text-slate-400">grams</span>
+                                </div>
+                                <div class="flex justify-between items-center mt-1.5 text-xs font-mono">
+                                    <span class="text-slate-400">Moisture Yield Factor:</span>
+                                    <span id="rec-yield-badge" class="text-slate-300 tabular-nums">100% (No change)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Final Per 100g Cooked Output Card -->
+                        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3.5 space-y-3">
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                                <span class="text-xs font-mono uppercase text-slate-300 font-bold">Result: Per 100g Cooked</span>
+                                <span class="text-[11px] font-mono text-emerald-400">READY FOR SCALE</span>
+                            </div>
+                            <div class="grid grid-cols-4 gap-2 text-center font-mono">
+                                <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                                    <span class="block text-[10px] text-slate-400">KCAL</span>
+                                    <span id="rec-out-kcal100" class="text-base font-bold text-white tabular-nums">0</span>
+                                </div>
+                                <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                                    <span class="block text-[10px] text-sky-400">PROT</span>
+                                    <span id="rec-out-p100" class="text-base font-bold text-sky-400 tabular-nums">0.0</span>
+                                </div>
+                                <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                                    <span class="block text-[10px] text-amber-400">FAT</span>
+                                    <span id="rec-out-f100" class="text-base font-bold text-amber-400 tabular-nums">0.0</span>
+                                </div>
+                                <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                                    <span class="block text-[10px] text-purple-400">CARB</span>
+                                    <span id="rec-out-c100" class="text-base font-bold text-purple-400 tabular-nums">0.0</span>
+                                </div>
+                            </div>
+
+                            <div class="text-[11px] font-mono text-slate-400 flex justify-between pt-1">
+                                <span>Whole Batch Total:</span>
+                                <span id="rec-out-batch-summary" class="text-slate-300 tabular-nums">0 kcal | P:0g F:0g C:0g</span>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons: Save to DB & Optional Log Portion Now -->
+                        <div class="space-y-2 pt-1">
+                            <button type="button" onclick="saveRecipeToDatabase(false)"
+                                class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold uppercase tracking-wider rounded transition shadow">
+                                Save Homemade Dish to Database
+                            </button>
+                            
+                            <div class="pt-2 border-t border-slate-800 flex items-center gap-2">
+                                <input type="number" id="rec-log-now-grams" placeholder="Portion (g)" value="250" min="1"
+                                    class="w-28 bg-slate-950 border border-slate-700 rounded px-2.5 py-2 text-xs font-mono text-white">
+                                <button type="button" onclick="saveRecipeToDatabase(true)"
+                                    class="flex-1 py-2 px-3 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs font-semibold rounded transition">
+                                    Save &amp; Log Portion Today
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Saved Homemade Recipes Quick List -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
+                        <h3 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-semibold mb-2.5">
+                            Saved Homemade Dishes (Click to Load/Edit)
+                        </h3>
+                        <div id="saved-recipes-list" class="space-y-1.5 max-h-60 overflow-y-auto text-xs font-mono">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+
+        <!-- ========================================== -->
+        <!-- TAB 3: FOOD DATABASE (LABEL ITEMS)         -->
+        <!-- ========================================== -->
+        <section id="tab-database" class="hidden space-y-5">
+            
+            <!-- Add / Edit Food Item Bar -->
+            <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 id="db-form-title" class="text-xs font-mono uppercase tracking-wider text-slate-200 font-bold">
+                        Add New Staple / Label Food (Per 100g)
+                    </h2>
+                    <span class="text-xs font-mono text-slate-400">Formula Reference: 4*P + 9*F + 4*C</span>
+                </div>
+
+                <form id="db-food-form" onsubmit="handleDbFoodSubmit(event)" class="grid grid-cols-2 sm:grid-cols-12 gap-3 items-end">
+                    <input type="hidden" id="db-edit-id" value="">
+                    
+                    <div class="col-span-2 sm:col-span-4">
+                        <label class="block text-xs text-slate-400 mb-1">Food / Label Name</label>
+                        <input type="text" id="db-name" required placeholder="e.g. Chicken Breast (Raw), WPC80, Oats"
+                            class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-sky-500">
+                    </div>
+
+                    <div class="col-span-1 sm:col-span-1.5">
+                        <label class="block text-xs font-mono text-sky-400 mb-1">Protein (g)</label>
+                        <input type="number" id="db-p" step="0.1" min="0" max="100" required placeholder="0.0"
+                            oninput="onDbMacroInput()"
+                            class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-sky-500">
+                    </div>
+
+                    <div class="col-span-1 sm:col-span-1.5">
+                        <label class="block text-xs font-mono text-amber-400 mb-1">Fat (g)</label>
+                        <input type="number" id="db-f" step="0.1" min="0" max="100" required placeholder="0.0"
+                            oninput="onDbMacroInput()"
+                            class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-amber-500">
+                    </div>
+
+                    <div class="col-span-1 sm:col-span-1.5">
+                        <label class="block text-xs font-mono text-purple-400 mb-1">Carbs (g)</label>
+                        <input type="number" id="db-c" step="0.1" min="0" max="100" required placeholder="0.0"
+                            oninput="onDbMacroInput()"
+                            class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-purple-500">
+                    </div>
+
+                    <div class="col-span-1 sm:col-span-1.5">
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-xs font-mono text-slate-300">kcal/100g</label>
+                            <span id="db-calc-kcal-hint" class="text-[10px] font-mono text-slate-500" title="Calculated from P*4 + F*9 + C*4"></span>
+                        </div>
+                        <input type="number" id="db-kcal" step="1" min="0" max="900" required placeholder="0"
+                            class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-emerald-500">
+                    </div>
+
+                    <div class="col-span-2 sm:col-span-2 flex gap-1.5">
+                        <button type="submit" id="db-submit-btn" class="flex-1 py-1.5 px-3 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs font-semibold uppercase rounded transition h-[34px]">
+                            Save Food
+                        </button>
+                        <button type="button" id="db-cancel-btn" onclick="resetDbForm()" class="hidden py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs rounded h-[34px]">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Food Database Table -->
+            <div class="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+                <div class="p-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center space-x-2">
+                        <input type="text" id="db-table-search" placeholder="Search food database..." oninput="renderFoodDatabase()"
+                            class="bg-slate-950 border border-slate-700 rounded px-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 w-64">
+                        <select id="db-filter-type" onchange="renderFoodDatabase()" class="bg-slate-950 border border-slate-700 rounded px-2.5 py-1 text-xs font-mono text-slate-300">
+                            <option value="all">All Items</option>
+                            <option value="staple">Basic Staples &amp; Labels</option>
+                            <option value="recipe">Homemade Recipes</option>
+                        </select>
+                    </div>
+                    <button onclick="restoreDefaultStaples()" class="text-xs font-mono text-slate-400 hover:text-sky-400 border border-slate-800 rounded px-2.5 py-1 bg-slate-950">
+                        Restore Missing Default Staples
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-800 bg-slate-950/60 text-[11px] font-mono uppercase text-slate-400">
+                                <th class="py-2.5 pl-4 pr-2">Food / Dish Name</th>
+                                <th class="py-2.5 px-2">Type</th>
+                                <th class="py-2.5 px-2 text-right">kcal / 100g</th>
+                                <th class="py-2.5 px-2 text-right text-sky-400">Protein / 100g</th>
+                                <th class="py-2.5 px-2 text-right text-amber-400">Fat / 100g</th>
+                                <th class="py-2.5 px-2 text-right text-purple-400">Carbs / 100g</th>
+                                <th class="py-2.5 px-2 text-right">P Density (g/100kcal)</th>
+                                <th class="py-2.5 pl-2 pr-4 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="db-table-tbody" class="divide-y divide-slate-800/70 text-xs sm:text-sm">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ========================================== -->
+        <!-- TAB 4: BASELINE STATS & DEFICIT PLANNER    -->
+        <!-- ========================================== -->
+        <section id="tab-stats" class="hidden space-y-6">
+            
+            <!-- Top Row: Historical Rolling Averages (Maintenance Discovery) -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- 7-Day Average -->
+                <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-mono uppercase text-slate-400">Last 7 Logged Days Avg</span>
+                        <span id="stats-7d-count" class="text-[11px] font-mono px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded">0 days</span>
+                    </div>
+                    <div class="text-2xl font-bold font-mono tabular-nums text-white mb-2">
+                        <span id="stats-7d-kcal">0</span> <span class="text-xs font-normal text-slate-400">kcal / day</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800 text-xs font-mono tabular-nums">
+                        <div><span class="text-slate-500 block text-[10px]">PROTEIN</span><span id="stats-7d-p" class="text-sky-400 font-semibold">0g</span></div>
+                        <div><span class="text-slate-500 block text-[10px]">FATS</span><span id="stats-7d-f" class="text-amber-400 font-semibold">0g</span></div>
+                        <div><span class="text-slate-500 block text-[10px]">CARBS</span><span id="stats-7d-c" class="text-purple-400 font-semibold">0g</span></div>
+                    </div>
+                </div>
+
+                <!-- 14-Day Average -->
+                <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-mono uppercase text-slate-400">Last 14 Logged Days Avg</span>
+                        <span id="stats-14d-count" class="text-[11px] font-mono px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded">0 days</span>
+                    </div>
+                    <div class="text-2xl font-bold font-mono tabular-nums text-white mb-2">
+                        <span id="stats-14d-kcal">0</span> <span class="text-xs font-normal text-slate-400">kcal / day</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800 text-xs font-mono tabular-nums">
+                        <div><span class="text-slate-500 block text-[10px]">PROTEIN</span><span id="stats-14d-p" class="text-sky-400 font-semibold">0g</span></div>
+                        <div><span class="text-slate-500 block text-[10px]">FATS</span><span id="stats-14d-f" class="text-amber-400 font-semibold">0g</span></div>
+                        <div><span class="text-slate-500 block text-[10px]">CARBS</span><span id="stats-14d-c" class="text-purple-400 font-semibold">0g</span></div>
+                    </div>
+                </div>
+
+                <!-- All-Time Logged Average -->
+                <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-mono uppercase text-slate-400">All Logged Days Avg</span>
+                        <span id="stats-all-count" class="text-[11px] font-mono px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded">0 days</span>
+                    </div>
+                    <div class="text-2xl font-bold font-mono tabular-nums text-white mb-2">
+                        <span id="stats-all-kcal">0</span> <span class="text-xs font-normal text-slate-400">kcal / day</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800 text-xs font-mono tabular-nums">
+                        <div><span class="text-slate-500 block text-[10px]">PROTEIN</span><span id="stats-all-p" class="text-sky-400 font-semibold">0g</span></div>
+                        <div><span class="text-slate-500 block text-[10px]">FATS</span><span id="stats-all-f" class="text-amber-400 font-semibold">0g</span></div>
+                        <div><span class="text-slate-500 block text-[10px]">CARBS</span><span id="stats-all-c" class="text-purple-400 font-semibold">0g</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 10% - 15% Deficit & High-Protein Macro Planner -->
+            <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+                <div class="border-b border-slate-800 pb-3 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                        <h2 class="text-sm font-mono uppercase tracking-wider text-emerald-400 font-bold">
+                            10% – 15% Deficit &amp; High-Protein Transition Calculator
+                        </h2>
+                        <p class="text-xs text-slate-400 mt-0.5">
+                            Configure your baseline maintenance calories (from tracked average or manual input) and lock in your protein &amp; fat floor.
+                        </p>
+                    </div>
+                    <button onclick="useTrackedAvgAsBaseline()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 rounded text-xs font-mono self-start sm:self-auto">
+                        Use 14d Logged Avg as Baseline
+                    </button>
+                </div>
+
+                <!-- Planner Inputs -->
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-5">
+                    <div class="bg-slate-950 p-3 rounded border border-slate-800">
+                        <label class="block text-xs font-mono text-slate-400 mb-1">Baseline Maintenance (kcal)</label>
+                        <input type="number" id="plan-maint-kcal" value="2600" step="25" min="1000" max="6000"
+                            oninput="savePlannerSettings()"
+                            class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-base font-mono font-bold text-white">
+                    </div>
+
+                    <div class="bg-slate-950 p-3 rounded border border-slate-800">
+                        <label class="block text-xs font-mono text-slate-400 mb-1">Bodyweight (kg)</label>
+                        <input type="number" id="plan-bw-kg" value="90" step="0.5" min="35" max="250"
+                            oninput="savePlannerSettings()"
+                            class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-base font-mono font-bold text-sky-400">
+                    </div>
+
+                    <div class="bg-slate-950 p-3 rounded border border-slate-800">
+                        <div class="flex justify-between text-xs font-mono mb-1">
+                            <label class="text-sky-400">Target Protein (g/kg)</label>
+                            <span id="plan-p-total-lbl" class="text-slate-300 font-bold">180g</span>
+                        </div>
+                        <input type="number" id="plan-p-per-kg" value="2.0" step="0.1" min="1.0" max="3.5"
+                            oninput="savePlannerSettings()"
+                            class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-base font-mono font-bold text-white">
+                    </div>
+
+                    <div class="bg-slate-950 p-3 rounded border border-slate-800">
+                        <div class="flex justify-between text-xs font-mono mb-1">
+                            <label class="text-amber-400">Target Fat Floor (g/kg)</label>
+                            <span id="plan-f-total-lbl" class="text-slate-300 font-bold">81g</span>
+                        </div>
+                        <input type="number" id="plan-f-per-kg" value="0.9" step="0.05" min="0.5" max="2.0"
+                            oninput="savePlannerSettings()"
+                            class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-base font-mono font-bold text-white">
+                    </div>
+                </div>
+
+                <!-- Resulting Regimes Comparison Table -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse border border-slate-800 rounded">
+                        <thead>
+                            <tr class="bg-slate-950 text-[11px] font-mono uppercase text-slate-400 border-b border-slate-800">
+                                <th class="py-2.5 px-4">Phase / Regime</th>
+                                <th class="py-2.5 px-3 text-right">Daily Target</th>
+                                <th class="py-2.5 px-3 text-right">Deficit / Day</th>
+                                <th class="py-2.5 px-3 text-right text-sky-400">Protein (Fixed High)</th>
+                                <th class="py-2.5 px-3 text-right text-amber-400">Fats (Floor)</th>
+                                <th class="py-2.5 px-3 text-right text-purple-400">Remaining Carbs</th>
+                                <th class="py-2.5 px-3 text-right">Est. Weekly Loss</th>
+                            </tr>
+                        </thead>
+                        <tbody id="planner-comparison-tbody" class="divide-y divide-slate-800 text-xs sm:text-sm font-mono tabular-nums">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Historical Daily Log Table & Data Backup/Export -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                
+                <!-- Historical Days Table (8 cols) -->
+                <div class="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+                    <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                        <h3 class="text-xs font-mono uppercase tracking-wider text-slate-200 font-semibold">
+                            Historical Daily Summary Log
+                        </h3>
+                        <span class="text-xs font-mono text-slate-500">Click any date to open in Daily Log</span>
+                    </div>
+                    <div class="overflow-x-auto max-h-96">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b border-slate-800 bg-slate-950/60 text-[11px] font-mono uppercase text-slate-400">
+                                    <th class="py-2 pl-4 pr-2">Date</th>
+                                    <th class="py-2 px-2 text-right">Items</th>
+                                    <th class="py-2 px-2 text-right">Total kcal</th>
+                                    <th class="py-2 px-2 text-right text-sky-400">Protein</th>
+                                    <th class="py-2 px-2 text-right text-sky-300">P (g/kg)</th>
+                                    <th class="py-2 px-2 text-right text-amber-400">Fats</th>
+                                    <th class="py-2 px-2 text-right text-purple-400">Carbs</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-days-tbody" class="divide-y divide-slate-800/70 text-xs font-mono tabular-nums">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Data Export / Import / Backup Panel (4 cols) -->
+                <div class="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-lg p-4 space-y-4">
+                    <h3 class="text-xs font-mono uppercase tracking-wider text-slate-200 font-semibold border-b border-slate-800 pb-2">
+                        Data Export, CSV &amp; Backup
+                    </h3>
+
+                    <div class="space-y-2">
+                        <p class="text-xs text-slate-400">Export your daily logs to CSV for Google Sheets / Excel analysis, or save a full JSON backup of all foods, homemade recipes, and logs.</p>
+                        
+                        <button onclick="exportDailySummaryCSV()" class="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-xs font-mono flex items-center justify-between">
+                            <span>Export Daily Summaries (.CSV)</span>
+                            <span class="text-sky-400">&darr; CSV</span>
+                        </button>
+
+                        <button onclick="exportFullJSON()" class="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-xs font-mono flex items-center justify-between">
+                            <span>Download Full Backup (.JSON)</span>
+                            <span class="text-emerald-400">&darr; JSON</span>
+                        </button>
+
+                        <button onclick="copySummaryToClipboard()" class="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-xs font-mono flex items-center justify-between">
+                            <span>Copy TSV for Google Sheets</span>
+                            <span class="text-purple-400">COPY</span>
+                        </button>
+                    </div>
+
+                    <div class="border-t border-slate-800 pt-3 space-y-2">
+                        <label class="block text-xs font-mono uppercase text-slate-400">Restore from JSON Backup</label>
+                        <input type="file" id="json-import-input" accept=".json" onchange="importFullJSON(event)"
+                            class="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-mono file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer">
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Application Logic -->
+    <script>
+        // =========================================================================
+        // 1. STARTER FOOD DATABASE (Accurate Per 100g Values for Common Staples)
+        // =========================================================================
+        const DEFAULT_STAPLES = [
+            { id: 'st_chk_raw', name: 'Chicken Breast Fillet (Raw)', kcal: 110, p: 23.1, f: 1.2, c: 0.0, isRecipe: false },
+            { id: 'st_chk_ckd', name: 'Chicken Breast (Cooked / Boiled / Sous-Vide)', kcal: 151, p: 29.0, f: 3.0, c: 0.0, isRecipe: false },
+            { id: 'st_thg_raw', name: 'Chicken Thigh Boneless Skinless (Raw)', kcal: 121, p: 19.7, f: 4.5, c: 0.0, isRecipe: false },
+            { id: 'st_prk_lean', name: 'Pork Loin / Tenderloin Lean (Raw)', kcal: 143, p: 21.5, f: 5.9, c: 0.0, isRecipe: false },
+            { id: 'st_beef_lean', name: 'Beef Lean Sirloin / Round (Raw)', kcal: 135, p: 21.8, f: 5.0, c: 0.0, isRecipe: false },
+            { id: 'st_egg_whl', name: 'Chicken Eggs Whole (Raw / Boiled, ~55g each)', kcal: 143, p: 12.6, f: 9.5, c: 0.7, isRecipe: false },
+            { id: 'st_egg_wht', name: 'Egg Whites (Liquid / Raw)', kcal: 52, p: 10.9, f: 0.2, c: 0.7, isRecipe: false },
+            { id: 'st_wpc80', name: 'WPC80 Whey Protein Concentrate (80%)', kcal: 394, p: 78.0, f: 6.5, c: 6.0, isRecipe: false },
+            { id: 'st_tvorog_5', name: 'Cottage Cheese / Tvorog 5%', kcal: 121, p: 17.0, f: 5.0, c: 1.8, isRecipe: false },
+            { id: 'st_tvorog_1', name: 'Cottage Cheese / Tvorog 0-1% (Low Fat)', kcal: 79, p: 18.0, f: 0.5, c: 1.8, isRecipe: false },
+            { id: 'st_cheese_hard', name: 'Hard Cheese 45% (Gouda / Edam / Russian)', kcal: 334, p: 24.5, f: 26.0, c: 0.0, isRecipe: false },
+            { id: 'st_milk_25', name: 'Milk 2.5%', kcal: 53, p: 2.9, f: 2.5, c: 4.7, isRecipe: false },
+            { id: 'st_kefir_25', name: 'Kefir 2.5%', kcal: 51, p: 2.9, f: 2.5, c: 4.0, isRecipe: false },
+            { id: 'st_sour_15', name: 'Sour Cream / Smetana 15%', kcal: 160, p: 2.6, f: 15.0, c: 3.6, isRecipe: false },
+            { id: 'st_oats_dry', name: 'Rolled Oats / Oatmeal (Dry)', kcal: 372, p: 13.5, f: 6.5, c: 61.8, isRecipe: false },
+            { id: 'st_buck_dry', name: 'Buckwheat Groats / Grechka (Dry)', kcal: 343, p: 12.6, f: 3.3, c: 68.0, isRecipe: false },
+            { id: 'st_buck_ckd', name: 'Buckwheat Boiled in Water (Cooked)', kcal: 110, p: 4.2, f: 1.1, c: 21.3, isRecipe: false },
+            { id: 'st_rice_dry', name: 'White / Basmati Rice (Dry)', kcal: 350, p: 7.1, f: 0.7, c: 78.6, isRecipe: false },
+            { id: 'st_rice_ckd', name: 'White Rice Boiled (Cooked)', kcal: 130, p: 2.7, f: 0.3, c: 28.2, isRecipe: false },
+            { id: 'st_pasta_dry', name: 'Durum Wheat Pasta (Dry)', kcal: 355, p: 12.5, f: 1.5, c: 72.0, isRecipe: false },
+            { id: 'st_potato_raw', name: 'Potato (Raw / Boiled Skinless)', kcal: 77, p: 2.0, f: 0.1, c: 17.5, isRecipe: false },
+            { id: 'st_bread_rye', name: 'Rye / Dark Bread', kcal: 214, p: 6.6, f: 1.2, c: 41.0, isRecipe: false },
+            { id: 'st_butter', name: 'Butter 82.5%', kcal: 748, p: 0.6, f: 82.5, c: 0.8, isRecipe: false },
+            { id: 'st_oil_olive', name: 'Olive Oil / Sunflower Oil', kcal: 899, p: 0.0, f: 99.9, c: 0.0, isRecipe: false },
+            { id: 'st_salmon', name: 'Salmon / Trout Fillet (Raw)', kcal: 208, p: 20.4, f: 13.4, c: 0.0, isRecipe: false },
+            { id: 'st_tuna_can', name: 'Canned Tuna in Own Juice (Drained)', kcal: 105, p: 24.0, f: 0.8, c: 0.0, isRecipe: false },
+            { id: 'st_banana', name: 'Banana (Peeled)', kcal: 89, p: 1.1, f: 0.3, c: 22.8, isRecipe: false },
+            { id: 'st_apple', name: 'Apple (Fresh)', kcal: 52, p: 0.3, f: 0.2, c: 13.8, isRecipe: false }
+        ];
+
+        // =========================================================================
+        // 2. STATE MANAGEMENT & LOCAL STORAGE PERSISTENCE
+        // =========================================================================
+        const STORAGE_KEY = 'MACRO_UTIL_DATA_V1';
+
+        let appState = {
+            selectedDate: getTodayISO(),
+            settings: {
+                bodyweightKg: 90.0,
+                targetMode: 'none', // 'none', 'maint', 'cut10', 'cut15', 'custom'
+                customTargetKcal: 2300,
+                baselineMaintKcal: 2600,
+                proteinPerKgTarget: 2.0,
+                fatPerKgTarget: 0.9
+            },
+            foods: [], // { id, name, kcal, p, f, c, isRecipe, recipeMeta }
+            logs: {}   // { 'YYYY-MM-DD': [ { id, foodId, name, weight, kcal100, p100, f100, c100 } ] }
+        };
+
+        // Active Recipe Builder Workspace State
+        let recipeWorkspace = {
+            editingFoodId: null,
+            name: '',
+            potTare: 0,
+            ingredients: [], // { id, name, weight, kcal100, p100, f100, c100 }
+            cookedWeight: 0,
+            manualCookedOverride: false
+        };
+
+        function getTodayISO() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function loadState() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    appState.settings = { ...appState.settings, ...(parsed.settings || {}) };
+                    appState.foods = Array.isArray(parsed.foods) && parsed.foods.length > 0 ? parsed.foods : [...DEFAULT_STAPLES];
+                    appState.logs = parsed.logs || {};
+                } else {
+                    appState.foods = [...DEFAULT_STAPLES];
+                }
+            } catch (err) {
+                console.error('Failed to read localStorage:', err);
+                appState.foods = [...DEFAULT_STAPLES];
+            }
+            appState.selectedDate = getTodayISO();
+        }
+
+        function saveState() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                    settings: appState.settings,
+                    foods: appState.foods,
+                    logs: appState.logs
+                }));
+                updateNavCounts();
+            } catch (err) {
+                console.error('Failed to save to localStorage:', err);
+                showToast('Storage Error: Check browser quota.', 'error');
+            }
+        }
+
+        function showToast(msg, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const el = document.createElement('div');
+            const borderColor = type === 'error' ? 'border-rose-500 text-rose-200' : 'border-emerald-500 text-emerald-200';
+            el.className = `bg-slate-900/95 border-l-4 ${borderColor} px-3.5 py-2 rounded shadow-lg text-xs font-mono transition-opacity duration-300`;
+            el.textContent = msg;
+            container.appendChild(el);
+            setTimeout(() => {
+                el.style.opacity = '0';
+                setTimeout(() => el.remove(), 300);
+            }, 2400);
+        }
+
+        // =========================================================================
+        // 3. NAVIGATION & INITIALIZATION
+        // =========================================================================
+        function switchTab(tabName) {
+            const tabs = ['log', 'recipes', 'database', 'stats'];
+            tabs.forEach(t => {
+                const sec = document.getElementById(`tab-${t}`);
+                const btn = document.getElementById(`tab-btn-${t}`);
+                if (t === tabName) {
+                    sec.classList.remove('hidden');
+                    btn.className = 'px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap bg-slate-800 text-white shadow-sm';
+                } else {
+                    sec.classList.add('hidden');
+                    btn.className = 'px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap text-slate-400 hover:text-slate-200';
+                }
+            });
+
+            if (tabName === 'log') {
+                populateQuickFoodSelect();
+                renderDailyLog();
+            } else if (tabName === 'recipes') {
+                populateRecipeIngredientSelect();
+                renderRecipeBuilder();
+                renderSavedRecipesList();
+            } else if (tabName === 'database') {
+                renderFoodDatabase();
+            } else if (tabName === 'stats') {
+                renderStatsAndPlanner();
+            }
+        }
+
+        function updateNavCounts() {
+            document.getElementById('nav-db-count').textContent = appState.foods.length;
+        }
+
+        function syncHeaderInputs() {
+            document.getElementById('global-bw-input').value = appState.settings.bodyweightKg;
+            document.getElementById('global-target-mode').value = appState.settings.targetMode;
+        }
+
+        function updateSettingsFromHeader() {
+            const bw = parseFloat(document.getElementById('global-bw-input').value);
+            if (!isNaN(bw) && bw >= 30) {
+                appState.settings.bodyweightKg = bw;
+                document.getElementById('plan-bw-kg').value = bw;
+            }
+            appState.settings.targetMode = document.getElementById('global-target-mode').value;
+            saveState();
+            renderDailyLog();
+            renderStatsAndPlanner();
+        }
+
+        // =========================================================================
+        // 4. DAILY LOG & DASHBOARD LOGIC
+        // =========================================================================
+        function changeDate(offsetDays) {
+            const parts = appState.selectedDate.split('-').map(Number);
+            const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+            dt.setDate(dt.getDate() + offsetDays);
+            const y = dt.getFullYear();
+            const m = String(dt.getMonth() + 1).padStart(2, '0');
+            const d = String(dt.getDate()).padStart(2, '0');
+            appState.selectedDate = `${y}-${m}-${d}`;
+            renderDailyLog();
+        }
+
+        function onDatePickerChange(val) {
+            if (val) {
+                appState.selectedDate = val;
+                renderDailyLog();
+            }
+        }
+
+        function setToday() {
+            appState.selectedDate = getTodayISO();
+            renderDailyLog();
+        }
+
+        function getDayTotals(dateStr) {
+            const items = appState.logs[dateStr] || [];
+            let kcal = 0, p = 0, f = 0, c = 0, weight = 0;
+            items.forEach(it => {
+                const factor = it.weight / 100.0;
+                kcal += it.kcal100 * factor;
+                p += it.p100 * factor;
+                f += it.f100 * factor;
+                c += it.c100 * factor;
+                weight += Number(it.weight) || 0;
+            });
+            return { kcal, p, f, c, weight, count: items.length };
+        }
+
+        function getActiveTargetKcal() {
+            const mode = appState.settings.targetMode;
+            const maint = appState.settings.baselineMaintKcal || 2600;
+            if (mode === 'maint') return Math.round(maint);
+            if (mode === 'cut10') return Math.round(maint * 0.90);
+            if (mode === 'cut15') return Math.round(maint * 0.85);
+            if (mode === 'custom') return Math.round(appState.settings.customTargetKcal || 2300);
+            return null;
+        }
+
+        function renderDailyLog() {
+            // Update Date Picker & Day Name
+            const picker = document.getElementById('current-date-picker');
+            picker.value = appState.selectedDate;
+            
+            const parts = appState.selectedDate.split('-').map(Number);
+            const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+            const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            const isToday = appState.selectedDate === getTodayISO();
+            document.getElementById('current-day-label').textContent = isToday ? `${dayName} (Today)` : dayName;
+
+            // Update 7-day rolling avg in bar
+            const avg7 = computeHistoricalAverages(7);
+            if (avg7.daysCount > 0) {
+                document.getElementById('header-7d-kcal').textContent = `${Math.round(avg7.kcal)} kcal`;
+                document.getElementById('header-7d-macros').textContent = `(P:${Math.round(avg7.p)}g F:${Math.round(avg7.f)}g C:${Math.round(avg7.c)}g)`;
+            } else {
+                document.getElementById('header-7d-kcal').textContent = `-- kcal`;
+                document.getElementById('header-7d-macros').textContent = `(No logged days)`;
+            }
+
+            // Compute Selected Day Totals
+            const totals = getDayTotals(appState.selectedDate);
+            const bw = appState.settings.bodyweightKg || 90;
+
+            document.getElementById('day-total-kcal').textContent = Math.round(totals.kcal);
+            document.getElementById('day-total-p').textContent = totals.p.toFixed(1);
+            document.getElementById('day-total-f').textContent = totals.f.toFixed(1);
+            document.getElementById('day-total-c').textContent = totals.c.toFixed(1);
+            document.getElementById('day-total-mass').textContent = Math.round(totals.weight);
+
+            // g/kg indicators
+            document.getElementById('day-p-per-kg').textContent = `${(totals.p / bw).toFixed(2)} g/kg`;
+            document.getElementById('day-f-per-kg').textContent = `${(totals.f / bw).toFixed(2)} g/kg`;
+            document.getElementById('day-c-per-kg').textContent = `${(totals.c / bw).toFixed(2)} g/kg`;
+
+            const pTargetGrams = Math.round(bw * (appState.settings.proteinPerKgTarget || 2.0));
+            document.getElementById('day-p-target-hint').textContent = `Target: ${pTargetGrams}g`;
+
+            // Macro kcal & % split
+            const pKcal = totals.p * 4;
+            const fKcal = totals.f * 9;
+            const cKcal = totals.c * 4;
+            const macroKcalSum = pKcal + fKcal + cKcal;
+
+            document.getElementById('day-p-kcal').textContent = Math.round(pKcal);
+            document.getElementById('day-f-kcal').textContent = Math.round(fKcal);
+            document.getElementById('day-c-kcal').textContent = Math.round(cKcal);
+
+            const pPct = macroKcalSum > 0 ? Math.round((pKcal / macroKcalSum) * 100) : 0;
+            const fPct = macroKcalSum > 0 ? Math.round((fKcal / macroKcalSum) * 100) : 0;
+            const cPct = macroKcalSum > 0 ? Math.max(0, 100 - pPct - fPct) : 0;
+
+            document.getElementById('day-p-pct').textContent = `${pPct}%`;
+            document.getElementById('day-f-pct').textContent = `${fPct}%`;
+            document.getElementById('day-c-pct').textContent = `${cPct}%`;
+
+            document.getElementById('split-lbl-p').textContent = pPct;
+            document.getElementById('split-lbl-f').textContent = fPct;
+            document.getElementById('split-lbl-c').textContent = cPct;
+
+            document.getElementById('split-bar-p').style.width = macroKcalSum > 0 ? `${pPct}%` : '33.3%';
+            document.getElementById('split-bar-f').style.width = macroKcalSum > 0 ? `${fPct}%` : '33.3%';
+            document.getElementById('split-bar-c').style.width = macroKcalSum > 0 ? `${cPct}%` : '33.4%';
+
+            // Calorie Target Progress / Badge
+            const targetKcal = getActiveTargetKcal();
+            const badge = document.getElementById('day-kcal-diff-badge');
+            const bar = document.getElementById('day-kcal-bar');
+            if (targetKcal) {
+                const diff = Math.round(totals.kcal - targetKcal);
+                const sign = diff > 0 ? '+' : '';
+                badge.textContent = `${sign}${diff} vs ${targetKcal}`;
+                const pct = Math.min(100, Math.round((totals.kcal / targetKcal) * 100));
+                bar.style.width = `${pct}%`;
+                bar.className = diff > 100 ? 'bg-amber-500 h-full transition-all duration-200' : 'bg-emerald-500 h-full transition-all duration-200';
+            } else {
+                badge.textContent = 'TRACKING MODE';
+                const refPct = Math.min(100, Math.round((totals.kcal / (appState.settings.baselineMaintKcal || 2600)) * 100));
+                bar.style.width = `${refPct}%`;
+                bar.className = 'bg-sky-500 h-full transition-all duration-200';
+            }
+
+            // Render Daily Log Table Rows
+            const entries = appState.logs[appState.selectedDate] || [];
+            const tbody = document.getElementById('daily-log-tbody');
+            const tfoot = document.getElementById('daily-log-tfoot');
+            const emptyState = document.getElementById('daily-log-empty');
+            const clearBtn = document.getElementById('btn-clear-day');
+
+            document.getElementById('log-count-badge').textContent = `${entries.length} ${entries.length === 1 ? 'item' : 'items'}`;
+
+            if (entries.length === 0) {
+                tbody.innerHTML = '';
+                tfoot.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                clearBtn.classList.add('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+            clearBtn.classList.remove('hidden');
+
+            tbody.innerHTML = entries.map((item, idx) => {
+                const factor = item.weight / 100.0;
+                const kcal = Math.round(item.kcal100 * factor);
+                const p = (item.p100 * factor).toFixed(1);
+                const f = (item.f100 * factor).toFixed(1);
+                const c = (item.c100 * factor).toFixed(1);
+
+                return `
+                    <tr class="hover:bg-slate-800/40 transition-colors group">
+                        <td class="py-2.5 pl-4 pr-2">
+                            <div class="font-medium text-slate-200">${escapeHtml(item.name)}</div>
+                            <div class="text-[11px] font-mono text-slate-500 tabular-nums">
+                                Per 100g: ${Math.round(item.kcal100)} kcal | P:${Number(item.p100).toFixed(1)} F:${Number(item.f100).toFixed(1)} C:${Number(item.c100).toFixed(1)}
+                            </div>
+                        </td>
+                        <td class="py-2.5 px-2 text-right">
+                            <div class="inline-flex items-center bg-slate-950 border border-slate-700 rounded px-2 py-1 focus-within:border-sky-500">
+                                <input type="number" value="${item.weight}" min="1" max="5000" step="1"
+                                    onchange="updateLogEntryWeight('${item.id}', this.value)"
+                                    class="w-14 bg-transparent text-right font-mono font-bold text-white text-xs focus:outline-none">
+                                <span class="text-[11px] font-mono text-slate-500 ml-1">g</span>
+                            </div>
+                        </td>
+                        <td class="py-2.5 px-2 text-right font-mono font-semibold text-white tabular-nums">${kcal}</td>
+                        <td class="py-2.5 px-2 text-right font-mono text-sky-400 tabular-nums">${p}</td>
+                        <td class="py-2.5 px-2 text-right font-mono text-amber-400 tabular-nums">${f}</td>
+                        <td class="py-2.5 px-2 text-right font-mono text-purple-400 tabular-nums">${c}</td>
+                        <td class="py-2.5 pl-2 pr-4 text-right">
+                            <button onclick="deleteLogEntry('${item.id}')" class="text-slate-500 hover:text-rose-400 font-mono text-xs px-1.5 py-0.5 rounded" title="Remove entry">
+                                &times;
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            tfoot.innerHTML = `
+                <tr>
+                    <td class="py-2.5 pl-4 pr-2 uppercase text-slate-400">Daily Total</td>
+                    <td class="py-2.5 px-2 text-right tabular-nums text-slate-300">${Math.round(totals.weight)} g</td>
+                    <td class="py-2.5 px-2 text-right tabular-nums text-white text-sm">${Math.round(totals.kcal)}</td>
+                    <td class="py-2.5 px-2 text-right tabular-nums text-sky-400">${totals.p.toFixed(1)}</td>
+                    <td class="py-2.5 px-2 text-right tabular-nums text-amber-400">${totals.f.toFixed(1)}</td>
+                    <td class="py-2.5 px-2 text-right tabular-nums text-purple-400">${totals.c.toFixed(1)}</td>
+                    <td></td>
+                </tr>
+            `;
+        }
+
+        function populateQuickFoodSelect() {
+            filterQuickFoodSelect();
+        }
+
+        function filterQuickFoodSelect() {
+            const query = (document.getElementById('quick-search-input').value || '').toLowerCase().trim();
+            const select = document.getElementById('quick-food-select');
+            const currentVal = select.value;
+
+            const filtered = appState.foods.filter(item => item.name.toLowerCase().includes(query));
+            
+            select.innerHTML = filtered.map(item => {
+                const badge = item.isRecipe ? '[RECIPE] ' : '';
+                return `<option value="${item.id}" class="py-1 px-2 rounded hover:bg-slate-800">${badge}${escapeHtml(item.name)} — ${Math.round(item.kcal)} kcal (P:${item.p} F:${item.f} C:${item.c})</option>`;
+            }).join('');
+
+            if (filtered.length > 0) {
+                if (currentVal && filtered.some(f => f.id === currentVal)) {
+                    select.value = currentVal;
+                } else {
+                    select.selectedIndex = 0;
+                }
+            }
+            updateQuickAddPreview();
+        }
+
+        function setQuickWeight(grams) {
+            document.getElementById('quick-weight-input').value = grams;
+            updateQuickAddPreview();
+        }
+
+        function updateQuickAddPreview() {
+            const select = document.getElementById('quick-food-select');
+            const weight = parseFloat(document.getElementById('quick-weight-input').value) || 0;
+            const food = appState.foods.find(f => f.id === select.value);
+
+            if (!food || weight <= 0) {
+                document.getElementById('prev-kcal').textContent = '0';
+                document.getElementById('prev-p').textContent = '0.0';
+                document.getElementById('prev-f').textContent = '0.0';
+                document.getElementById('prev-c').textContent = '0.0';
+                return;
+            }
+
+            const factor = weight / 100.0;
+            document.getElementById('prev-kcal').textContent = Math.round(food.kcal * factor);
+            document.getElementById('prev-p').textContent = (food.p * factor).toFixed(1);
+            document.getElementById('prev-f').textContent = (food.f * factor).toFixed(1);
+            document.getElementById('prev-c').textContent = (food.c * factor).toFixed(1);
+        }
+
+        function addSelectedFoodToLog() {
+            const select = document.getElementById('quick-food-select');
+            const weight = parseFloat(document.getElementById('quick-weight-input').value);
+            const food = appState.foods.find(f => f.id === select.value);
+
+            if (!food) {
+                showToast('Select a food item first.', 'error');
+                return;
+            }
+            if (isNaN(weight) || weight <= 0) {
+                showToast('Enter a valid weight in grams.', 'error');
+                return;
+            }
+
+            if (!appState.logs[appState.selectedDate]) {
+                appState.logs[appState.selectedDate] = [];
+            }
+
+            appState.logs[appState.selectedDate].push({
+                id: 'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                foodId: food.id,
+                name: food.name,
+                weight: Math.round(weight),
+                kcal100: Number(food.kcal),
+                p100: Number(food.p),
+                f100: Number(food.f),
+                c100: Number(food.c)
+            });
+
+            saveState();
+            renderDailyLog();
+            showToast(`Logged ${Math.round(weight)}g ${food.name}`);
+        }
+
+        function autoCalcDirectLabelKcal() {
+            const p = parseFloat(document.getElementById('dl-p').value) || 0;
+            const f = parseFloat(document.getElementById('dl-f').value) || 0;
+            const c = parseFloat(document.getElementById('dl-c').value) || 0;
+            const calc = Math.round(p * 4 + f * 9 + c * 4);
+            document.getElementById('dl-kcal').value = calc;
+        }
+
+        function handleDirectLabelSubmit(e) {
+            e.preventDefault();
+            const name = document.getElementById('dl-name').value.trim();
+            const p100 = parseFloat(document.getElementById('dl-p').value) || 0;
+            const f100 = parseFloat(document.getElementById('dl-f').value) || 0;
+            const c100 = parseFloat(document.getElementById('dl-c').value) || 0;
+            const kcal100 = parseFloat(document.getElementById('dl-kcal').value) || 0;
+            const weight = parseFloat(document.getElementById('dl-weight').value) || 100;
+            const saveToDb = document.getElementById('dl-save-db').checked;
+
+            if (!name) return;
+
+            let foodId = 'custom_' + Date.now();
+            if (saveToDb) {
+                appState.foods.unshift({
+                    id: foodId,
+                    name: name,
+                    kcal: Math.round(kcal100),
+                    p: Number(p100.toFixed(1)),
+                    f: Number(f100.toFixed(1)),
+                    c: Number(c100.toFixed(1)),
+                    isRecipe: false
+                });
+                populateQuickFoodSelect();
+            }
+
+            if (!appState.logs[appState.selectedDate]) {
+                appState.logs[appState.selectedDate] = [];
+            }
+
+            appState.logs[appState.selectedDate].push({
+                id: 'log_' + Date.now(),
+                foodId: foodId,
+                name: name,
+                weight: Math.round(weight),
+                kcal100: Math.round(kcal100),
+                p100: Number(p100.toFixed(1)),
+                f100: Number(f100.toFixed(1)),
+                c100: Number(c100.toFixed(1))
+            });
+
+            saveState();
+            renderDailyLog();
+            document.getElementById('direct-label-form').reset();
+            document.getElementById('dl-weight').value = 100;
+            document.getElementById('dl-save-db').checked = true;
+            showToast(`Added ${name} (${Math.round(weight)}g)`);
+        }
+
+        function updateLogEntryWeight(entryId, newWeightVal) {
+            const w = parseFloat(newWeightVal);
+            if (isNaN(w) || w <= 0) {
+                renderDailyLog();
+                return;
+            }
+            const list = appState.logs[appState.selectedDate] || [];
+            const item = list.find(i => i.id === entryId);
+            if (item) {
+                item.weight = Math.round(w);
+                saveState();
+                renderDailyLog();
+            }
+        }
+
+        function deleteLogEntry(entryId) {
+            const list = appState.logs[appState.selectedDate] || [];
+            appState.logs[appState.selectedDate] = list.filter(i => i.id !== entryId);
+            if (appState.logs[appState.selectedDate].length === 0) {
+                delete appState.logs[appState.selectedDate];
+            }
+            saveState();
+            renderDailyLog();
+        }
+
+        function clearCurrentDayLog() {
+            delete appState.logs[appState.selectedDate];
+            saveState();
+            renderDailyLog();
+            showToast('Cleared entries for selected day.');
+        }
+
+        function copyPreviousDayLog() {
+            const parts = appState.selectedDate.split('-').map(Number);
+            const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+            dt.setDate(dt.getDate() - 1);
+            const y = dt.getFullYear();
+            const m = String(dt.getMonth() + 1).padStart(2, '0');
+            const d = String(dt.getDate()).padStart(2, '0');
+            const prevDate = `${y}-${m}-${d}`;
+
+            const prevEntries = appState.logs[prevDate];
+            if (!prevEntries || prevEntries.length === 0) {
+                showToast(`No meals found on ${prevDate} to copy.`, 'error');
+                return;
+            }
+
+            if (!appState.logs[appState.selectedDate]) {
+                appState.logs[appState.selectedDate] = [];
+            }
+
+            prevEntries.forEach(item => {
+                appState.logs[appState.selectedDate].push({
+                    ...item,
+                    id: 'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
+                });
+            });
+
+            saveState();
+            renderDailyLog();
+            showToast(`Copied ${prevEntries.length} items from ${prevDate}`);
+        }
+
+        // =========================================================================
+        // 5. HOMEMADE RECIPE / MEAL BUILDER (COOKED WEIGHT YIELD CALCULATOR)
+        // =========================================================================
+        function populateRecipeIngredientSelect() {
+            const sel = document.getElementById('rec-db-select');
+            sel.innerHTML = appState.foods.map(f => {
+                return `<option value="${f.id}">${escapeHtml(f.name)} (${Math.round(f.kcal)} kcal | P:${f.p} F:${f.f} C:${f.c})</option>`;
+            }).join('');
+        }
+
+        function addDbIngredientToRecipe() {
+            const sel = document.getElementById('rec-db-select');
+            const weight = parseFloat(document.getElementById('rec-db-weight').value);
+            const food = appState.foods.find(f => f.id === sel.value);
+
+            if (!food || isNaN(weight) || weight <= 0) {
+                showToast('Select an ingredient and valid raw weight.', 'error');
+                return;
+            }
+
+            recipeWorkspace.ingredients.push({
+                id: 'ing_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+                name: food.name,
+                weight: Math.round(weight),
+                kcal100: Number(food.kcal),
+                p100: Number(food.p),
+                f100: Number(food.f),
+                c100: Number(food.c)
+            });
+
+            syncCookedWeightIfNotOverridden();
+            renderRecipeBuilder();
+        }
+
+        function addWaterToRecipe(grams) {
+            recipeWorkspace.ingredients.push({
+                id: 'ing_' + Date.now() + '_water',
+                name: 'Water / Broth Base (0 kcal)',
+                weight: grams,
+                kcal100: 0,
+                p100: 0,
+                f100: 0,
+                c100: 0
+            });
+            syncCookedWeightIfNotOverridden();
+            renderRecipeBuilder();
+        }
+
+        function autoCalcCustomRecKcal() {
+            const p = parseFloat(document.getElementById('rec-cust-p').value) || 0;
+            const f = parseFloat(document.getElementById('rec-cust-f').value) || 0;
+            const c = parseFloat(document.getElementById('rec-cust-c').value) || 0;
+            document.getElementById('rec-cust-kcal').value = Math.round(p * 4 + f * 9 + c * 4);
+        }
+
+        function addCustomIngredientToRecipe() {
+            const name = document.getElementById('rec-cust-name').value.trim();
+            const weight = parseFloat(document.getElementById('rec-cust-weight').value);
+            const p100 = parseFloat(document.getElementById('rec-cust-p').value) || 0;
+            const f100 = parseFloat(document.getElementById('rec-cust-f').value) || 0;
+            const c100 = parseFloat(document.getElementById('rec-cust-c').value) || 0;
+            const kcal100 = parseFloat(document.getElementById('rec-cust-kcal').value) || 0;
+
+            if (!name || isNaN(weight) || weight <= 0) {
+                showToast('Enter custom ingredient name and weight in grams.', 'error');
+                return;
+            }
+
+            recipeWorkspace.ingredients.push({
+                id: 'ing_' + Date.now(),
+                name,
+                weight: Math.round(weight),
+                kcal100,
+                p100,
+                f100,
+                c100
+            });
+
+            document.getElementById('rec-cust-name').value = '';
+            document.getElementById('rec-cust-weight').value = '';
+            document.getElementById('rec-cust-p').value = '';
+            document.getElementById('rec-cust-f').value = '';
+            document.getElementById('rec-cust-c').value = '';
+            document.getElementById('rec-cust-kcal').value = '';
+
+            syncCookedWeightIfNotOverridden();
+            renderRecipeBuilder();
+        }
+
+        function getRecipeRawTotals() {
+            let rawWeight = 0, kcal = 0, p = 0, f = 0, c = 0;
+            recipeWorkspace.ingredients.forEach(ing => {
+                const factor = ing.weight / 100.0;
+                rawWeight += Number(ing.weight) || 0;
+                kcal += ing.kcal100 * factor;
+                p += ing.p100 * factor;
+                f += ing.f100 * factor;
+                c += ing.c100 * factor;
+            });
+            return { rawWeight, kcal, p, f, c };
+        }
+
+        function syncCookedWeightIfNotOverridden() {
+            const rawTotals = getRecipeRawTotals();
+            if (!recipeWorkspace.manualCookedOverride || recipeWorkspace.cookedWeight <= 0) {
+                recipeWorkspace.cookedWeight = rawTotals.rawWeight;
+                document.getElementById('rec-cooked-weight').value = rawTotals.rawWeight;
+            }
+        }
+
+        function syncCookedToRawWeight() {
+            const rawTotals = getRecipeRawTotals();
+            recipeWorkspace.manualCookedOverride = false;
+            recipeWorkspace.cookedWeight = rawTotals.rawWeight;
+            document.getElementById('rec-cooked-weight').value = rawTotals.rawWeight;
+            renderRecipeBuilder();
+        }
+
+        function onPotTareOrGrossChange() {
+            const tare = parseFloat(document.getElementById('rec-pot-tare').value) || 0;
+            recipeWorkspace.potTare = tare;
+            const helperBox = document.getElementById('rec-gross-helper-box');
+            if (tare > 0) {
+                helperBox.classList.remove('hidden');
+                const gross = parseFloat(document.getElementById('rec-gross-weight').value) || 0;
+                if (gross > tare) {
+                    const netCooked = Math.round(gross - tare);
+                    recipeWorkspace.cookedWeight = netCooked;
+                    recipeWorkspace.manualCookedOverride = true;
+                    document.getElementById('rec-cooked-weight').value = netCooked;
+                }
+            } else {
+                helperBox.classList.add('hidden');
+            }
+            renderRecipeBuilder();
+        }
+
+        function onManualCookedWeightChange() {
+            const val = parseFloat(document.getElementById('rec-cooked-weight').value);
+            if (!isNaN(val) && val > 0) {
+                recipeWorkspace.cookedWeight = Math.round(val);
+                recipeWorkspace.manualCookedOverride = true;
+                renderRecipeBuilder(false);
+            }
+        }
+
+        function updateRecipeIngredientWeight(ingId, newWeight) {
+            const w = parseFloat(newWeight);
+            if (isNaN(w) || w <= 0) return;
+            const ing = recipeWorkspace.ingredients.find(i => i.id === ingId);
+            if (ing) {
+                ing.weight = Math.round(w);
+                syncCookedWeightIfNotOverridden();
+                renderRecipeBuilder();
+            }
+        }
+
+        function removeRecipeIngredient(ingId) {
+            recipeWorkspace.ingredients = recipeWorkspace.ingredients.filter(i => i.id !== ingId);
+            syncCookedWeightIfNotOverridden();
+            renderRecipeBuilder();
+        }
+
+        function renderRecipeBuilder(updateCookedInput = true) {
+            const rawTotals = getRecipeRawTotals();
+            document.getElementById('rec-ing-count').textContent = `${recipeWorkspace.ingredients.length} ingredients`;
+            document.getElementById('rec-raw-weight-display').textContent = `${Math.round(rawTotals.rawWeight)} g`;
+
+            if (updateCookedInput) {
+                document.getElementById('rec-cooked-weight').value = recipeWorkspace.cookedWeight;
+            }
+
+            const tbody = document.getElementById('rec-ingredients-tbody');
+            const tfoot = document.getElementById('rec-ingredients-tfoot');
+
+            if (recipeWorkspace.ingredients.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-xs font-mono text-slate-500">Add raw ingredients above to calculate batch macros and cooked yield.</td></tr>`;
+                tfoot.innerHTML = '';
+            } else {
+                tbody.innerHTML = recipeWorkspace.ingredients.map(ing => {
+                    const factor = ing.weight / 100.0;
+                    return `
+                        <tr class="hover:bg-slate-800/40">
+                            <td class="py-2 pl-4 pr-2 font-medium text-slate-200">${escapeHtml(ing.name)}</td>
+                            <td class="py-2 px-2 text-right">
+                                <input type="number" value="${ing.weight}" min="1" step="1"
+                                    onchange="updateRecipeIngredientWeight('${ing.id}', this.value)"
+                                    class="w-20 bg-slate-950 border border-slate-700 rounded px-2 py-0.5 text-right font-mono text-xs text-white">
+                            </td>
+                            <td class="py-2 px-2 text-right font-mono tabular-nums">${Math.round(ing.kcal100 * factor)}</td>
+                            <td class="py-2 px-2 text-right font-mono text-sky-400 tabular-nums">${(ing.p100 * factor).toFixed(1)}</td>
+                            <td class="py-2 px-2 text-right font-mono text-amber-400 tabular-nums">${(ing.f100 * factor).toFixed(1)}</td>
+                            <td class="py-2 px-2 text-right font-mono text-purple-400 tabular-nums">${(ing.c100 * factor).toFixed(1)}</td>
+                            <td class="py-2 pl-2 pr-4 text-right">
+                                <button onclick="removeRecipeIngredient('${ing.id}')" class="text-slate-500 hover:text-rose-400 font-mono">&times;</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                tfoot.innerHTML = `
+                    <tr>
+                        <td class="py-2 pl-4 pr-2 uppercase text-slate-400">Total Raw Batch</td>
+                        <td class="py-2 px-2 text-right tabular-nums">${Math.round(rawTotals.rawWeight)} g</td>
+                        <td class="py-2 px-2 text-right tabular-nums">${Math.round(rawTotals.kcal)}</td>
+                        <td class="py-2 px-2 text-right tabular-nums text-sky-400">${rawTotals.p.toFixed(1)}</td>
+                        <td class="py-2 px-2 text-right tabular-nums text-amber-400">${rawTotals.f.toFixed(1)}</td>
+                        <td class="py-2 px-2 text-right tabular-nums text-purple-400">${rawTotals.c.toFixed(1)}</td>
+                        <td></td>
+                    </tr>
+                `;
+            }
+
+            // Compute Per 100g of Cooked Dish
+            const cookedW = recipeWorkspace.cookedWeight > 0 ? recipeWorkspace.cookedWeight : rawTotals.rawWeight;
+            let kcal100 = 0, p100 = 0, f100 = 0, c100 = 0;
+
+            if (cookedW > 0 && rawTotals.rawWeight > 0) {
+                const per100Factor = 100.0 / cookedW;
+                kcal100 = rawTotals.kcal * per100Factor;
+                p100 = rawTotals.p * per100Factor;
+                f100 = rawTotals.f * per100Factor;
+                c100 = rawTotals.c * per100Factor;
+
+                const yieldPct = Math.round((cookedW / rawTotals.rawWeight) * 100);
+                const diffGrams = Math.round(cookedW - rawTotals.rawWeight);
+                const sign = diffGrams > 0 ? '+' : '';
+                document.getElementById('rec-yield-badge').textContent = `${yieldPct}% (${sign}${diffGrams}g moisture)`;
+            } else {
+                document.getElementById('rec-yield-badge').textContent = `100% (0g diff)`;
+            }
+
+            document.getElementById('rec-out-kcal100').textContent = Math.round(kcal100);
+            document.getElementById('rec-out-p100').textContent = p100.toFixed(1);
+            document.getElementById('rec-out-f100').textContent = f100.toFixed(1);
+            document.getElementById('rec-out-c100').textContent = c100.toFixed(1);
+            document.getElementById('rec-out-batch-summary').textContent = 
+                `${Math.round(rawTotals.kcal)} kcal | P:${Math.round(rawTotals.p)}g F:${Math.round(rawTotals.f)}g C:${Math.round(rawTotals.c)}g`;
+        }
+
+        function saveRecipeToDatabase(alsoLogPortion = false) {
+            const nameInput = document.getElementById('rec-name').value.trim();
+            if (!nameInput) {
+                showToast('Enter a name for your homemade dish.', 'error');
+                document.getElementById('rec-name').focus();
+                return;
+            }
+            if (recipeWorkspace.ingredients.length === 0) {
+                showToast('Add at least one ingredient to the recipe.', 'error');
+                return;
+            }
+
+            const rawTotals = getRecipeRawTotals();
+            const cookedW = recipeWorkspace.cookedWeight > 0 ? recipeWorkspace.cookedWeight : rawTotals.rawWeight;
+            const per100Factor = 100.0 / cookedW;
+
+            const kcal100 = Math.round(rawTotals.kcal * per100Factor);
+            const p100 = Number((rawTotals.p * per100Factor).toFixed(1));
+            const f100 = Number((rawTotals.f * per100Factor).toFixed(1));
+            const c100 = Number((rawTotals.c * per100Factor).toFixed(1));
+
+            const foodId = recipeWorkspace.editingFoodId || ('rec_' + Date.now());
+            const recipeRecord = {
+                id: foodId,
+                name: nameInput,
+                kcal: kcal100,
+                p: p100,
+                f: f100,
+                c: c100,
+                isRecipe: true,
+                recipeMeta: {
+                    rawWeight: Math.round(rawTotals.rawWeight),
+                    cookedWeight: Math.round(cookedW),
+                    potTare: recipeWorkspace.potTare || 0,
+                    ingredients: JSON.parse(JSON.stringify(recipeWorkspace.ingredients))
+                }
+            };
+
+            const existingIdx = appState.foods.findIndex(f => f.id === foodId);
+            if (existingIdx >= 0) {
+                appState.foods[existingIdx] = recipeRecord;
+            } else {
+                appState.foods.unshift(recipeRecord);
+            }
+
+            if (alsoLogPortion) {
+                const portionG = parseFloat(document.getElementById('rec-log-now-grams').value) || 250;
+                if (!appState.logs[appState.selectedDate]) {
+                    appState.logs[appState.selectedDate] = [];
+                }
+                appState.logs[appState.selectedDate].push({
+                    id: 'log_' + Date.now(),
+                    foodId: recipeRecord.id,
+                    name: recipeRecord.name,
+                    weight: Math.round(portionG),
+                    kcal100: recipeRecord.kcal,
+                    p100: recipeRecord.p,
+                    f100: recipeRecord.f,
+                    c100: recipeRecord.c
+                });
+                saveState();
+                showToast(`Saved "${nameInput}" & logged ${Math.round(portionG)}g to today!`);
+                switchTab('log');
+                return;
+            }
+
+            saveState();
+            renderSavedRecipesList();
+            showToast(`Saved "${nameInput}" (${kcal100} kcal/100g cooked) to Database!`);
+        }
+
+        function resetRecipeBuilder() {
+            recipeWorkspace = {
+                editingFoodId: null,
+                name: '',
+                potTare: 0,
+                ingredients: [],
+                cookedWeight: 0,
+                manualCookedOverride: false
+            };
+            document.getElementById('rec-name').value = '';
+            document.getElementById('rec-pot-tare').value = 0;
+            document.getElementById('rec-gross-helper-box').classList.add('hidden');
+            renderRecipeBuilder();
+        }
+
+        function renderSavedRecipesList() {
+            const container = document.getElementById('saved-recipes-list');
+            const recipes = appState.foods.filter(f => f.isRecipe);
+
+            if (recipes.length === 0) {
+                container.innerHTML = `<p class="text-slate-500 py-2">No saved homemade recipes yet.</p>`;
+                return;
+            }
+
+            container.innerHTML = recipes.map(r => {
+                const meta = r.recipeMeta || {};
+                const weightInfo = meta.cookedWeight ? `${meta.cookedWeight}g cooked` : 'per 100g';
+                return `
+                    <div class="flex items-center justify-between bg-slate-950 border border-slate-800 rounded px-2.5 py-2 hover:border-slate-700">
+                        <div class="truncate pr-2">
+                            <button onclick="loadRecipeIntoBuilder('${r.id}')" class="text-left text-sky-400 hover:underline font-semibold block truncate">
+                                ${escapeHtml(r.name)}
+                            </button>
+                            <span class="text-[11px] text-slate-400 tabular-nums">${r.kcal} kcal/100g | P:${r.p} F:${r.f} C:${r.c} (${weightInfo})</span>
+                        </div>
+                        <button onclick="loadRecipeIntoBuilder('${r.id}')" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] shrink-0">
+                            Edit / Batch
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function loadRecipeIntoBuilder(foodId) {
+            const rec = appState.foods.find(f => f.id === foodId);
+            if (!rec) return;
+
+            recipeWorkspace.editingFoodId = rec.id;
+            recipeWorkspace.name = rec.name;
+            document.getElementById('rec-name').value = rec.name;
+
+            if (rec.recipeMeta && Array.isArray(rec.recipeMeta.ingredients)) {
+                recipeWorkspace.ingredients = JSON.parse(JSON.stringify(rec.recipeMeta.ingredients));
+                recipeWorkspace.cookedWeight = rec.recipeMeta.cookedWeight || 0;
+                recipeWorkspace.potTare = rec.recipeMeta.potTare || 0;
+                recipeWorkspace.manualCookedOverride = true;
+                document.getElementById('rec-pot-tare').value = recipeWorkspace.potTare;
+            } else {
+                recipeWorkspace.ingredients = [];
+                recipeWorkspace.cookedWeight = 100;
+            }
+
+            onPotTareOrGrossChange();
+            renderRecipeBuilder();
+            showToast(`Loaded recipe: ${rec.name}`);
+        }
+
+        // =========================================================================
+        // 6. FOOD DATABASE TAB LOGIC
+        // =========================================================================
+        function onDbMacroInput() {
+            const p = parseFloat(document.getElementById('db-p').value) || 0;
+            const f = parseFloat(document.getElementById('db-f').value) || 0;
+            const c = parseFloat(document.getElementById('db-c').value) || 0;
+            const calc = Math.round(p * 4 + f * 9 + c * 4);
+            document.getElementById('db-calc-kcal-hint').textContent = `(${calc})`;
+            document.getElementById('db-kcal').value = calc;
+        }
+
+        function handleDbFoodSubmit(e) {
+            e.preventDefault();
+            const editId = document.getElementById('db-edit-id').value;
+            const name = document.getElementById('db-name').value.trim();
+            const p = parseFloat(document.getElementById('db-p').value) || 0;
+            const f = parseFloat(document.getElementById('db-f').value) || 0;
+            const c = parseFloat(document.getElementById('db-c').value) || 0;
+            const kcal = parseFloat(document.getElementById('db-kcal').value) || 0;
+
+            if (!name) return;
+
+            if (editId) {
+                const item = appState.foods.find(x => x.id === editId);
+                if (item) {
+                    item.name = name;
+                    item.p = Number(p.toFixed(1));
+                    item.f = Number(f.toFixed(1));
+                    item.c = Number(c.toFixed(1));
+                    item.kcal = Math.round(kcal);
+                }
+                showToast(`Updated "${name}"`);
+            } else {
+                appState.foods.unshift({
+                    id: 'fd_' + Date.now(),
+                    name,
+                    kcal: Math.round(kcal),
+                    p: Number(p.toFixed(1)),
+                    f: Number(f.toFixed(1)),
+                    c: Number(c.toFixed(1)),
+                    isRecipe: false
+                });
+                showToast(`Added "${name}" to Food Database`);
+            }
+
+            saveState();
+            resetDbForm();
+            renderFoodDatabase();
+        }
+
+        function editDbFoodItem(foodId) {
+            const item = appState.foods.find(x => x.id === foodId);
+            if (!item) return;
+
+            document.getElementById('db-edit-id').value = item.id;
+            document.getElementById('db-name').value = item.name;
+            document.getElementById('db-p').value = item.p;
+            document.getElementById('db-f').value = item.f;
+            document.getElementById('db-c').value = item.c;
+            document.getElementById('db-kcal').value = item.kcal;
+
+            document.getElementById('db-form-title').textContent = `Editing Food: ${item.name}`;
+            document.getElementById('db-submit-btn').textContent = 'Update Item';
+            document.getElementById('db-cancel-btn').classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function resetDbForm() {
+            document.getElementById('db-food-form').reset();
+            document.getElementById('db-edit-id').value = '';
+            document.getElementById('db-calc-kcal-hint').textContent = '';
+            document.getElementById('db-form-title').textContent = 'Add New Staple / Label Food (Per 100g)';
+            document.getElementById('db-submit-btn').textContent = 'Save Food';
+            document.getElementById('db-cancel-btn').classList.add('hidden');
+        }
+
+        function deleteDbFoodItem(foodId) {
+            appState.foods = appState.foods.filter(x => x.id !== foodId);
+            saveState();
+            renderFoodDatabase();
+            showToast('Removed item from database.');
+        }
+
+        function restoreDefaultStaples() {
+            let added = 0;
+            DEFAULT_STAPLES.forEach(def => {
+                if (!appState.foods.some(f => f.id === def.id || f.name.toLowerCase() === def.name.toLowerCase())) {
+                    appState.foods.push({ ...def });
+                    added++;
+                }
+            });
+            saveState();
+            renderFoodDatabase();
+            showToast(added > 0 ? `Restored ${added} default staple foods.` : 'All default staples are already present.');
+        }
+
+        function renderFoodDatabase() {
+            const query = (document.getElementById('db-table-search').value || '').toLowerCase().trim();
+            const filterType = document.getElementById('db-filter-type').value;
+            const tbody = document.getElementById('db-table-tbody');
+
+            const filtered = appState.foods.filter(item => {
+                if (filterType === 'staple' && item.isRecipe) return false;
+                if (filterType === 'recipe' && !item.isRecipe) return false;
+                return item.name.toLowerCase().includes(query);
+            });
+
+            tbody.innerHTML = filtered.map(item => {
+                const pDensity = item.kcal > 0 ? ((item.p / item.kcal) * 100).toFixed(1) : '0.0';
+                const typeBadge = item.isRecipe 
+                    ? `<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-emerald-950 text-emerald-300 border border-emerald-800/70">HOMEMADE</span>`
+                    : `<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-slate-800 text-slate-400">LABEL/STAPLE</span>`;
+
+                return `
+                    <tr class="hover:bg-slate-800/40 font-mono">
+                        <td class="py-2.5 pl-4 pr-2 font-sans font-medium text-slate-200">${escapeHtml(item.name)}</td>
+                        <td class="py-2.5 px-2">${typeBadge}</td>
+                        <td class="py-2.5 px-2 text-right font-bold text-white tabular-nums">${Math.round(item.kcal)}</td>
+                        <td class="py-2.5 px-2 text-right text-sky-400 tabular-nums">${Number(item.p).toFixed(1)}g</td>
+                        <td class="py-2.5 px-2 text-right text-amber-400 tabular-nums">${Number(item.f).toFixed(1)}g</td>
+                        <td class="py-2.5 px-2 text-right text-purple-400 tabular-nums">${Number(item.c).toFixed(1)}g</td>
+                        <td class="py-2.5 px-2 text-right text-slate-400 tabular-nums">${pDensity}g / 100kcal</td>
+                        <td class="py-2.5 pl-2 pr-4 text-right space-x-2">
+                            ${item.isRecipe ? `<button onclick="switchTab('recipes'); loadRecipeIntoBuilder('${item.id}')" class="text-xs text-emerald-400 hover:underline">Recipe</button>` : ''}
+                            <button onclick="editDbFoodItem('${item.id}')" class="text-xs text-sky-400 hover:underline">Edit</button>
+                            <button onclick="deleteDbFoodItem('${item.id}')" class="text-xs text-rose-400 hover:underline">Del</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // =========================================================================
+        // 7. BASELINE STATS & 10-15% DEFICIT PLANNER
+        // =========================================================================
+        function getSortedLoggedDates() {
+            return Object.keys(appState.logs)
+                .filter(d => Array.isArray(appState.logs[d]) && appState.logs[d].length > 0)
+                .sort((a, b) => b.localeCompare(a)); // Descending (newest first)
+        }
+
+        function computeHistoricalAverages(limitDays = null) {
+            const dates = getSortedLoggedDates();
+            const slice = limitDays ? dates.slice(0, limitDays) : dates;
+            if (slice.length === 0) {
+                return { daysCount: 0, kcal: 0, p: 0, f: 0, c: 0 };
+            }
+
+            let sumKcal = 0, sumP = 0, sumF = 0, sumC = 0;
+            slice.forEach(d => {
+                const t = getDayTotals(d);
+                sumKcal += t.kcal;
+                sumP += t.p;
+                sumF += t.f;
+                sumC += t.c;
+            });
+
+            const count = slice.length;
+            return {
+                daysCount: count,
+                kcal: sumKcal / count,
+                p: sumP / count,
+                f: sumF / count,
+                c: sumC / count
+            };
+        }
+
+        function useTrackedAvgAsBaseline() {
+            const avg14 = computeHistoricalAverages(14);
+            if (avg14.daysCount === 0) {
+                showToast('Log at least 1 day of meals first to use tracked average.', 'error');
+                return;
+            }
+            const rounded = Math.round(avg14.kcal);
+            appState.settings.baselineMaintKcal = rounded;
+            document.getElementById('plan-maint-kcal').value = rounded;
+            saveState();
+            renderStatsAndPlanner();
+            showToast(`Set baseline maintenance to ${rounded} kcal (from ${avg14.daysCount}d avg).`);
+        }
+
+        function savePlannerSettings() {
+            const maint = parseFloat(document.getElementById('plan-maint-kcal').value) || 2600;
+            const bw = parseFloat(document.getElementById('plan-bw-kg').value) || 90;
+            const pKg = parseFloat(document.getElementById('plan-p-per-kg').value) || 2.0;
+            const fKg = parseFloat(document.getElementById('plan-f-per-kg').value) || 0.9;
+
+            appState.settings.baselineMaintKcal = maint;
+            appState.settings.bodyweightKg = bw;
+            appState.settings.proteinPerKgTarget = pKg;
+            appState.settings.fatPerKgTarget = fKg;
+
+            document.getElementById('global-bw-input').value = bw;
+            saveState();
+            renderStatsAndPlanner();
+        }
+
+        function renderStatsAndPlanner() {
+            // 1. Update Rolling Average Cards
+            const avg7 = computeHistoricalAverages(7);
+            const avg14 = computeHistoricalAverages(14);
+            const avgAll = computeHistoricalAverages(null);
+
+            const fillCard = (prefix, data) => {
+                document.getElementById(`stats-${prefix}-count`).textContent = `${data.daysCount} ${data.daysCount === 1 ? 'day' : 'days'}`;
+                document.getElementById(`stats-${prefix}-kcal`).textContent = Math.round(data.kcal);
+                document.getElementById(`stats-${prefix}-p`).textContent = `${Math.round(data.p)}g`;
+                document.getElementById(`stats-${prefix}-f`).textContent = `${Math.round(data.f)}g`;
+                document.getElementById(`stats-${prefix}-c`).textContent = `${Math.round(data.c)}g`;
+            };
+
+            fillCard('7d', avg7);
+            fillCard('14d', avg14);
+            fillCard('all', avgAll);
+
+            // 2. Sync Planner Inputs
+            const maint = appState.settings.baselineMaintKcal || 2600;
+            const bw = appState.settings.bodyweightKg || 90;
+            const pKg = appState.settings.proteinPerKgTarget || 2.0;
+            const fKg = appState.settings.fatPerKgTarget || 0.9;
+
+            document.getElementById('plan-maint-kcal').value = maint;
+            document.getElementById('plan-bw-kg').value = bw;
+            document.getElementById('plan-p-per-kg').value = pKg;
+            document.getElementById('plan-f-per-kg').value = fKg;
+
+            const fixedP = Math.round(bw * pKg);
+            const fixedF = Math.round(bw * fKg);
+            document.getElementById('plan-p-total-lbl').textContent = `${fixedP}g (${fixedP * 4} kcal)`;
+            document.getElementById('plan-f-total-lbl').textContent = `${fixedF}g (${fixedF * 9} kcal)`;
+
+            // 3. Build 0%, -10%, -15%, -20% Comparison Rows
+            const regimes = [
+                { label: 'Baseline Maintenance (0%)', factor: 1.00, badge: 'bg-slate-800 text-slate-300' },
+                { label: 'Reasonable Cut — 10% Deficit', factor: 0.90, badge: 'bg-sky-950 text-sky-300 border border-sky-800' },
+                { label: 'Moderate Cut — 15% Deficit', factor: 0.85, badge: 'bg-emerald-950 text-emerald-300 border border-emerald-800' },
+                { label: 'Aggressive Cut — 20% Deficit', factor: 0.80, badge: 'bg-amber-950 text-amber-300 border border-amber-800' }
+            ];
+
+            const plannerTbody = document.getElementById('planner-comparison-tbody');
+            plannerTbody.innerHTML = regimes.map(r => {
+                const targetKcal = Math.round(maint * r.factor);
+                const dailyDeficit = Math.round(maint - targetKcal);
+                const remKcalForCarbs = Math.max(0, targetKcal - (fixedP * 4) - (fixedF * 9));
+                const carbsGrams = Math.round(remKcalForCarbs / 4);
+                const weeklyFatLossKg = ((dailyDeficit * 7) / 7700).toFixed(2);
+
+                return `
+                    <tr class="hover:bg-slate-800/40">
+                        <td class="py-3 px-4 font-sans font-medium">
+                            <span class="px-2 py-0.5 rounded text-xs font-mono ${r.badge}">${r.label}</span>
+                        </td>
+                        <td class="py-3 px-3 text-right font-bold text-white text-sm">${targetKcal} kcal</td>
+                        <td class="py-3 px-3 text-right text-slate-400">${dailyDeficit > 0 ? `-${dailyDeficit} kcal` : '0 kcal'}</td>
+                        <td class="py-3 px-3 text-right text-sky-400 font-semibold">${fixedP}g <span class="text-slate-500 text-xs">(${pKg}g/kg)</span></td>
+                        <td class="py-3 px-3 text-right text-amber-400">${fixedF}g <span class="text-slate-500 text-xs">(${fKg}g/kg)</span></td>
+                        <td class="py-3 px-3 text-right text-purple-400 font-semibold">${carbsGrams}g <span class="text-slate-500 text-xs">(${Math.round((carbsGrams*4/targetKcal)*100)}%)</span></td>
+                        <td class="py-3 px-3 text-right text-emerald-400">${dailyDeficit > 0 ? `~${weeklyFatLossKg} kg/wk` : '0.00 kg/wk'}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            // 4. Render Historical Logged Days Table
+            const historyTbody = document.getElementById('history-days-tbody');
+            const dates = getSortedLoggedDates();
+
+            if (dates.length === 0) {
+                historyTbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500">No historical days logged yet.</td></tr>`;
+                return;
+            }
+
+            historyTbody.innerHTML = dates.map(d => {
+                const t = getDayTotals(d);
+                return `
+                    <tr onclick="openHistoricalDate('${d}')" class="hover:bg-slate-800/60 cursor-pointer transition-colors">
+                        <td class="py-2.5 pl-4 pr-2 text-sky-400 font-semibold underline decoration-slate-700">${d}</td>
+                        <td class="py-2.5 px-2 text-right text-slate-400">${t.count}</td>
+                        <td class="py-2.5 px-2 text-right font-bold text-white">${Math.round(t.kcal)}</td>
+                        <td class="py-2.5 px-2 text-right text-sky-400">${t.p.toFixed(1)}g</td>
+                        <td class="py-2.5 px-2 text-right text-sky-300">${(t.p / bw).toFixed(2)}</td>
+                        <td class="py-2.5 px-2 text-right text-amber-400">${t.f.toFixed(1)}g</td>
+                        <td class="py-2.5 px-2 text-right text-purple-400">${t.c.toFixed(1)}g</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function openHistoricalDate(dateStr) {
+            appState.selectedDate = dateStr;
+            switchTab('log');
+        }
+
+        // =========================================================================
+        // 8. DATA EXPORT / IMPORT (CSV, TSV CLIPBOARD, FULL JSON)
+        // =========================================================================
+        function exportDailySummaryCSV() {
+            const dates = getSortedLoggedDates().reverse(); // Chronological
+            if (dates.length === 0) {
+                showToast('No logged days to export.', 'error');
+                return;
+            }
+            const bw = appState.settings.bodyweightKg || 90;
+            const rows = [
+                ['Date', 'Items_Count', 'Total_Weight_g', 'Calories_kcal', 'Protein_g', 'Protein_g_per_kg', 'Fats_g', 'Carbs_g']
+            ];
+            dates.forEach(d => {
+                const t = getDayTotals(d);
+                rows.push([
+                    d,
+                    t.count,
+                    Math.round(t.weight),
+                    Math.round(t.kcal),
+                    t.p.toFixed(1),
+                    (t.p / bw).toFixed(2),
+                    t.f.toFixed(1),
+                    t.c.toFixed(1)
+                ]);
+            });
+
+            const csvContent = rows.map(r => r.join(',')).join('\n');
+            downloadBlob(csvContent, `macro_daily_summary_${getTodayISO()}.csv`, 'text/csv;charset=utf-8;');
+            showToast('Downloaded Daily Summary CSV');
+        }
+
+        function copySummaryToClipboard() {
+            const dates = getSortedLoggedDates().reverse();
+            if (dates.length === 0) {
+                showToast('No logged days to copy.', 'error');
+                return;
+            }
+            const bw = appState.settings.bodyweightKg || 90;
+            const lines = ['Date\tCalories\tProtein (g)\tProtein (g/kg)\tFats (g)\tCarbs (g)'];
+            dates.forEach(d => {
+                const t = getDayTotals(d);
+                lines.push(`${d}\t${Math.round(t.kcal)}\t${t.p.toFixed(1)}\t${(t.p / bw).toFixed(2)}\t${t.f.toFixed(1)}\t${t.c.toFixed(1)}`);
+            });
+
+            const textArea = document.createElement('textarea');
+            textArea.value = lines.join('\n');
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showToast('Copied TSV table to clipboard! Paste directly into Google Sheets.');
+            } catch (err) {
+                showToast('Copy failed.', 'error');
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function exportFullJSON() {
+            const payload = JSON.stringify({
+                exportedAt: new Date().toISOString(),
+                settings: appState.settings,
+                foods: appState.foods,
+                logs: appState.logs
+            }, null, 2);
+            downloadBlob(payload, `macro_util_backup_${getTodayISO()}.json`, 'application/json');
+            showToast('Downloaded full JSON backup.');
+        }
+
+        function importFullJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (parsed.foods && parsed.logs) {
+                        appState.settings = { ...appState.settings, ...(parsed.settings || {}) };
+                        appState.foods = parsed.foods;
+                        appState.logs = parsed.logs;
+                        saveState();
+                        syncHeaderInputs();
+                        renderStatsAndPlanner();
+                        showToast('Successfully restored database and logs from backup!');
+                    } else {
+                        showToast('Invalid JSON backup file structure.', 'error');
+                    }
+                } catch (err) {
+                    showToast('Failed to parse JSON file.', 'error');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function downloadBlob(content, filename, contentType) {
+            const blob = new Blob([content], { type: contentType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // =========================================================================
+        // 9. BOOTSTRAP ON WINDOW LOAD
+        // =========================================================================
+        window.onload = function() {
+            loadState();
+            syncHeaderInputs();
+            updateNavCounts();
+            populateQuickFoodSelect();
+            renderDailyLog();
+        };
+    </script>
+</body>
+</html>
